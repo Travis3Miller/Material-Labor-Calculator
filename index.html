@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cabinet Material Calculator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <div class="brand" aria-label="THE TYRO">
+        <span class="brand-the">THE</span>
+        <span class="brand-tyro"><span class="brand-t">T</span><span class="brand-rest">YRO</span></span>
+      </div>
+      <h1>Material Usage Calculator</h1>
+      <p class="subtitle">Estimate carcass and back material square footage per lineal foot for lower, upper, and tall cabinets.</p>
+      <div id="planBanner" class="plan-banner" role="status">
+        <span id="planBadge" class="plan-badge">Free plan</span>
+        <p id="planLabel">Use the core calculator for free. Upgrade through Wix to unlock premium tools.</p>
+        <a id="upgradeLink" class="plan-link" href="https://www.wix.com/" target="_blank" rel="noopener">Upgrade with Wix</a>
+      </div>
+    </header>
+
+    <section class="card form-card">
+      <div class="tab-row">
+        <button id="calculatorTabBtn" type="button" class="tab-btn active">Calculator</button>
+        <button id="cabinetStandardsTabBtn" type="button" class="tab-btn">Cabinetry Standards Set Up</button>
+        <button id="materialSetupTabBtn" type="button" class="tab-btn">Material Set Up</button>
+        <button id="laborSetupTabBtn" type="button" class="tab-btn">Labor Set Up</button>
+      </div>
+
+      <div id="calculatorTab" class="tab-panel">
+        <h2>Inputs</h2>
+        <div class="toolbar">
+          <label>Project Name
+            <input id="projectName" type="text" placeholder="Example: Smith Kitchen">
+          </label>
+          <button id="saveProjectBtn" type="button">Save Project</button>
+        </div>
+
+        <div class="toolbar">
+          <label>Saved Projects
+            <select id="projectSelect">
+              <option value="">Select a saved project</option>
+            </select>
+          </label>
+          <button id="loadProjectBtn" type="button" class="secondary">Load</button>
+          <button id="deleteProjectBtn" type="button" class="danger">Delete</button>
+        </div>
+
+        <div class="grid material-select-grid">
+          <div class="input-group">
+            <h3>Selected Materials For This Job</h3>
+            <p class="job-select-subhead">CABINET MATERIALS</p>
+            <label>Default Materials
+              <select id="useStandardMaterialsSelect">
+                <option value="no" selected>Custom selections</option>
+                <option value="yes">Use defaults</option>
+              </select>
+            </label>
+            <label>Construction Type For This Job
+              <select id="jobConstructionTypeSelect">
+                <option value="faceFrame" selected>Face Frame</option>
+                <option value="frameless">Frameless / Euro</option>
+              </select>
+            </label>
+            <label>Carcass Sheet Material
+              <select id="carcassMaterialSelect">
+                <option value="">Select carcass material</option>
+              </select>
+            </label>
+            <label>Back Sheet Material
+              <select id="backMaterialSelect">
+                <option value="">Select back material</option>
+              </select>
+            </label>
+            <label>Finished End Material
+              <select id="finishedEndMaterialSelect">
+                <option value="">Select finished end material</option>
+              </select>
+            </label>
+            <label id="boardStockLabelWrap">Board Stock (Face Frame)
+              <select id="boardStockSelect">
+                <option value="">Select board stock</option>
+              </select>
+            </label>
+
+              <label>Toe Kick Material
+                <select id="toeKickMaterialSelect">
+                  <option value="">Select toe kick material</option>
+                </select>
+              </label>
+              <label>Toe Kick Sleeper Spacing (in)
+                <input id="toeKickSleeperSpacing" type="number" min="1" step="0.01" value="16">
+              </label>
+              <label>Nailer Material
+                <select id="nailerMaterialSelect">
+                  <option value="">Select nailer material</option>
+                </select>
+              </label>
+              <label>Crown Moulding Material
+                <select id="crownMaterialSelect">
+                  <option value="">Select crown moulding material</option>
+                </select>
+              </label>
+
+            <p id="jobDrawerMaterialsHead" class="job-select-subhead">DRAWERS</p>
+            <div id="jobDrawerMaterialsWrap" class="job-select-subgroup hidden">
+              <label>Drawer Box Material
+                <select id="drawerBoxMaterialSelect">
+                  <option value="">Select drawer box material</option>
+                </select>
+              </label>
+              <label>Drawer Bottom Material
+                <select id="drawerBottomMaterialSelect">
+                  <option value="">Select drawer bottom material</option>
+                </select>
+              </label>
+              <label>Drawer Slide Type
+                <select id="drawerSlideSelect">
+                  <option value="">Select drawer slide</option>
+                </select>
+              </label>
+            </div>
+
+            <p class="job-select-subhead">DOORS</p>
+            <label>Total Door Count
+              <input id="totalDoorCount" type="number" min="0" step="1" value="0">
+            </label>
+            <label>Door Style
+              <select id="doorStyleSelect">
+                <option value="">Select door style</option>
+              </select>
+            </label>
+            <label>Hinge Type
+              <select id="hingeTypeSelect">
+                <option value="">Select hinge type</option>
+              </select>
+            </label>
+            <label>Base Plate Type
+              <select id="basePlateTypeSelect">
+                <option value="">Select base plate type</option>
+              </select>
+            </label>
+
+            <p class="job-select-subhead">FINISHING</p>
+            <label>Paint Type
+              <select id="paintTypeSelect">
+                <option value="">Select paint type</option>
+              </select>
+            </label>
+
+            <p class="job-select-subhead">JOB OPTIONS</p>
+            <label>Include Build?
+              <select id="includeBuildSelect">
+                <option value="yes" selected>Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+            <label>Include Install?
+              <select id="includeInstallSelect">
+                <option value="yes" selected>Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+            <label>Include Finish?
+              <select id="includeFinishSelect">
+                <option value="yes" selected>Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+            <p class="help compact">These selections drive sheet counts and costs for this project.</p>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="input-group">
+            <h3>Lower Cabinet</h3>
+            <label>Lineal Feet (project)
+              <input id="lowerLF" type="number" min="0" step="0.01" value="0">
+            </label>
+            <label>Finished Ends (qty)
+              <input id="lowerFinishedEndsQty" type="number" min="0" step="1" value="0">
+            </label>
+          </div>
+
+          <div class="input-group">
+            <h3>Upper Cabinet</h3>
+            <label>Lineal Feet (project)
+              <input id="upperLF" type="number" min="0" step="0.01" value="0">
+            </label>
+            <label>Finished Ends (qty)
+              <input id="upperFinishedEndsQty" type="number" min="0" step="1" value="0">
+            </label>
+          </div>
+
+          <div class="input-group">
+            <h3>Tall Cabinet</h3>
+            <label>Lineal Feet (project)
+              <input id="tallLF" type="number" min="0" step="0.01" value="0">
+            </label>
+            <label>Finished Ends (qty)
+              <input id="tallFinishedEndsQty" type="number" min="0" step="1" value="0">
+            </label>
+          </div>
+
+          <div class="input-group">
+            <h3>Drawers</h3>
+            <label>Are there Drawers on this job?
+              <select id="hasDrawersSelect">
+                <option value="yes" selected>Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+            <label id="howManyDrawersWrap">How many drawers?
+              <input id="howManyDrawers" type="number" min="0" step="1" value="0">
+            </label>
+            <label>Drawer Depth (in)
+              <input id="drawerDepth" type="number" min="1" step="0.01" value="21">
+            </label>
+            <div class="drawer-sets-head">
+              <h4>Drawer Sets</h4>
+            </div>
+            <div id="drawerSetsWrap" class="list-grid"></div>
+            <button id="addDrawerSetBtn" type="button" class="secondary">Add Additional Drawer Height</button>
+            <p class="help compact">Lineal inches prefill from lower LF x 12. You can type your own values at any time.</p>
+          </div>
+        </div>
+
+        <div class="grid material-select-grid">
+          <div class="input-group">
+            <h3>Job Accessories</h3>
+            <label>Accessory
+              <select id="jobAccessorySelect">
+                <option value="">Select accessory</option>
+              </select>
+            </label>
+            <label>Quantity
+              <input id="jobAccessoryQty" type="number" min="1" step="1" value="1">
+            </label>
+            <button id="addJobAccessoryBtn" type="button">Add Accessory To Job</button>
+            <div id="jobAccessoryList" class="list-grid"></div>
+          </div>
+        </div>
+
+        <div class="single-row">
+          <button id="calculateBtn" type="button">Calculate</button>
+        </div>
+      </div>
+
+      <div id="cabinetStandardsTab" class="tab-panel hidden">
+        <h2>Cabinetry Standards Set Up</h2>
+        <div class="single-row">
+          <label>Assumption Profile
+            <select id="constructionTypeSelect">
+              <option value="faceFrame" selected>Face Frame</option>
+              <option value="frameless">Frameless / Euro</option>
+            </select>
+          </label>
+          <button id="saveAssumptionBtn" type="button" class="secondary">Save Assumption</button>
+        </div>
+        <p class="help">Set cabinet heights and depths here so Calculator can focus on lineal feet.</p>
+        <div class="grid material-grid">
+          <div class="input-group">
+            <h3>Lower Cabinet Standards</h3>
+            <label>Height (in)
+              <input id="lowerHeight" type="number" min="1" step="0.01" value="34.5">
+            </label>
+            <label>Depth (in)
+              <input id="lowerDepth" type="number" min="1" step="0.01" value="24">
+            </label>
+            <label>Top Type
+              <select id="lowerTopType">
+                <option value="full">Full Top</option>
+                <option value="stretchers">Top Stretchers</option>
+              </select>
+            </label>
+            <label id="stretcherWrap">Top Stretcher Width (in)
+              <input id="stretcherWidth" type="number" min="1" step="0.01" value="4">
+            </label>
+          </div>
+
+          <div class="input-group">
+            <h3>Upper Cabinet Standards</h3>
+            <label>Height (in)
+              <input id="upperHeight" type="number" min="1" step="0.01" value="30">
+            </label>
+            <label>Depth (in)
+              <input id="upperDepth" type="number" min="1" step="0.01" value="12">
+            </label>
+          </div>
+
+          <div class="input-group">
+            <h3>Tall Cabinet Standards</h3>
+            <label>Height (in)
+              <input id="tallHeight" type="number" min="1" step="0.01" value="90">
+            </label>
+            <label>Depth (in)
+              <input id="tallDepth" type="number" min="1" step="0.01" value="24">
+            </label>
+          </div>
+
+          <div class="input-group">
+            <h3>Construction Assumptions</h3>
+            <label>Average Cabinet Box Width (in)
+              <input id="avgWidth" type="number" min="1" step="0.01" value="18">
+            </label>
+            <label>Standard Toe Kick Height (in)
+              <input id="toeKickHeight" type="number" min="1" step="0.01" value="4">
+            </label>
+            <label>Standard Nailer Rip Size (in)
+              <input id="nailerRipSize" type="number" min="1" step="0.01" value="3">
+            </label>
+            <p class="help compact">Each profile saves its own lower/upper/tall standards plus typical width.</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="materialSetupTab" class="tab-panel hidden">
+        <h2>Material Set Up</h2>
+        <p class="help">Manage panel stock, board stock, hardware, and finish options here. Defaults control what fills in when you check “Use standard materials.”</p>
+
+        <div class="sub-tab-row">
+          <button id="panelStockTabBtn" type="button" class="sub-tab-btn active">Panel Stock</button>
+          <button id="boardStockTabBtn" type="button" class="sub-tab-btn">Board Stock</button>
+          <button id="hardwareTabBtn" type="button" class="sub-tab-btn">Hardware</button>
+          <button id="doorsTabBtn" type="button" class="sub-tab-btn">Doors</button>
+          <button id="paintTabBtn" type="button" class="sub-tab-btn">Paint</button>
+          <button id="mouldingTabBtn" type="button" class="sub-tab-btn">Moulding</button>
+          <button id="accessoriesTabBtn" type="button" class="sub-tab-btn">Accessories</button>
+          <button id="defaultsTabBtn" type="button" class="sub-tab-btn">Defaults</button>
+        </div>
+
+        <div id="panelStockTab" class="sub-tab-panel">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Create Panel Stock</h3>
+              <label>Material Name
+                <input id="newPanelName" type="text" placeholder="3/4 Maple Melamine">
+              </label>
+              <label>Thickness (in)
+                <input id="newPanelThickness" type="text" placeholder="3/4 or 0.75 or 1 1/8">
+              </label>
+              <div class="form-row">
+                <label>Panel Width (in)
+                  <input id="newPanelWidth" type="number" min="1" step="0.01" value="48">
+                </label>
+                <label>Panel Length (in)
+                  <input id="newPanelLength" type="number" min="1" step="0.01" value="96">
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Price Per Sheet ($)
+                  <input id="newPanelCost" type="number" min="0" step="0.01" value="0">
+                </label>
+                <label>Waste Factor (%)
+                  <input id="newPanelWaste" type="number" min="0" step="0.1" value="15">
+                </label>
+              </div>
+              <label>Used For
+                <select id="newPanelUsedFor">
+                  <option value="carcass">Carcass</option>
+                  <option value="back">Back</option>
+                  <option value="finishedEnd">Finished Ends</option>
+                  <option value="toeKick">Toe Kick</option>
+                  <option value="nailer">Nailers</option>
+                  <option value="drawerBox">Drawer Box</option>
+                  <option value="drawerBottom">Drawer Bottom</option>
+                </select>
+              </label>
+              <button id="addPanelStockBtn" type="button">Create Panel Stock</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Material Name</th>
+                  <th>Thickness</th>
+                  <th>Panel Width</th>
+                  <th>Panel Length</th>
+                  <th>Price Per Sheet</th>
+                  <th>Waste Factor</th>
+                  <th>Used For</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="panelStockTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="boardStockTab" class="sub-tab-panel hidden">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Create Board Stock</h3>
+              <label>Material Name
+                <input id="newBoardStockName" type="text" placeholder="Alder">
+              </label>
+              <div class="form-row">
+                <label>Price Per Board Foot ($)
+                  <input id="newBoardStockCost" type="number" min="0" step="0.01" value="0">
+                </label>
+                <label>Waste Factor (%)
+                  <input id="newBoardStockWasteFactor" type="number" min="0" step="0.1" value="0">
+                </label>
+              </div>
+              <label>Used For
+                <select id="newBoardStockUsedFor">
+                  <option value="faceFrame">Face Frames</option>
+                </select>
+              </label>
+              <button id="addBoardStockBtn" type="button">Create Board Stock</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Material Name</th>
+                  <th>Price Per Board Foot</th>
+                  <th>Waste Factor</th>
+                  <th>Used For</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="boardStockTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="hardwareTab" class="sub-tab-panel hidden">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Create Hardware</h3>
+              <label>Hardware Name
+                <input id="newHardwareName" type="text" placeholder="Blum Tandem 21 in">
+              </label>
+              <div class="form-row">
+                <label>Used For
+                  <select id="newHardwareUsedFor">
+                    <option value="slides">Drawer Slides</option>
+                    <option value="hinges">Hinges</option>
+                    <option value="basePlates">Base Plates</option>
+                  </select>
+                </label>
+                <label id="newHardwareCostLabel"><span id="newHardwareCostText">Price Per Pair ($)</span>
+                  <input id="newHardwareCost" type="number" min="0" step="0.01" value="0">
+                </label>
+              </div>
+              <label>Waste Factor (%)
+                <input id="newHardwareWasteFactor" type="number" min="0" step="0.1" value="0">
+              </label>
+              <button id="addHardwareBtn" type="button">Create Hardware</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Material Name</th>
+                  <th>Price</th>
+                  <th>Waste Factor</th>
+                  <th>Used For</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="hardwareTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="doorsTab" class="sub-tab-panel hidden">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Create Door</h3>
+              <label>Door Name
+                <input id="newDoorStyleName" type="text" placeholder="Shaker Door">
+              </label>
+              <label>Price Per Square Foot ($)
+                <input id="newDoorStyleCost" type="number" min="0" step="0.01" value="15">
+              </label>
+              <button id="addDoorStyleBtn" type="button">Create Door</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Door Name</th>
+                  <th>Price Per Square Foot</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="doorTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="paintTab" class="sub-tab-panel hidden">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Create Paint</h3>
+              <label>Paint Name
+                <input id="newPaintTypeName" type="text" placeholder="SW Conversion Varnish">
+              </label>
+              <div class="form-row">
+                <label>Sealer/Primer Cost Per Gallon ($)
+                  <input id="newPaintPrimerCost" type="number" min="0" step="0.01" value="35">
+                </label>
+                <label>Top Coat Cost Per Gallon ($)
+                  <input id="newPaintTopcoatCost" type="number" min="0" step="0.01" value="55">
+                </label>
+              </div>
+              <button id="addPaintTypeBtn" type="button">Create Paint</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Paint Name</th>
+                  <th>Sealer/Primer</th>
+                  <th>Top Coat</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="paintTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="mouldingTab" class="sub-tab-panel hidden">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Create Moulding</h3>
+              <label>Moulding Name
+                <input id="newCrownName" type="text" placeholder="3 1/2 in Crown">
+              </label>
+              <div class="form-row">
+                <label>Cost Per Lineal Foot ($)
+                  <input id="newCrownCost" type="number" min="0" step="0.01" value="0">
+                </label>
+                <label>Waste Factor (%)
+                  <input id="newCrownWasteFactor" type="number" min="0" step="0.1" value="15">
+                </label>
+              </div>
+              <label>Used For
+                <select id="newCrownUsedFor">
+                  <option value="crown">Crown Moulding</option>
+                </select>
+              </label>
+              <button id="addCrownBtn" type="button">Create Moulding</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Moulding Name</th>
+                  <th>Cost Per Lineal Foot</th>
+                  <th>Waste Factor</th>
+                  <th>Used For</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="mouldingTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="accessoriesTab" class="sub-tab-panel hidden">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Create Accessory</h3>
+              <label>Accessory Name
+                <input id="newAccessoryName" type="text" placeholder="Trash Rollout">
+              </label>
+              <label>Cost ($)
+                <input id="newAccessoryCost" type="number" min="0" step="0.01" value="0">
+              </label>
+              <button id="addAccessoryBtn" type="button">Create Accessory</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Accessory Name</th>
+                  <th>Cost</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="accessoryTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="defaultsTab" class="sub-tab-panel hidden">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Defaults Profile</h3>
+              <label>Profile
+                <select id="defaultsProfileSelect">
+                  <option value="faceFrame">Face Frame</option>
+                  <option value="frameless">Frameless / Euro</option>
+                </select>
+              </label>
+              <label>Fallback Waste Factor (%)
+                <input id="wasteFactorPercent" type="number" min="0" step="0.01" value="15">
+              </label>
+              <p class="help compact">Defaults apply when “Use standard materials” is selected.</p>
+            </div>
+          </div>
+
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Panel Stock Defaults</h3>
+              <div id="defaultPanelStockList" class="list-grid"></div>
+            </div>
+            <div class="input-group">
+              <h3>Board Stock Defaults</h3>
+              <div id="defaultBoardStockList" class="list-grid"></div>
+            </div>
+          </div>
+
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Hardware Defaults</h3>
+              <div id="defaultHardwareList" class="list-grid"></div>
+            </div>
+            <div class="input-group">
+              <h3>Doors + Paint Defaults</h3>
+              <div id="defaultDoorList" class="list-grid"></div>
+              <div id="defaultPaintList" class="list-grid"></div>
+            </div>
+          </div>
+
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Moulding Defaults</h3>
+              <div id="defaultMouldingList" class="list-grid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="laborSetupTab" class="tab-panel hidden">
+        <h2>Labor Set Up</h2>
+        <p class="help">Set your production rates and shop rate. These values drive build/install/finish labor cost.</p>
+        <div class="grid material-grid">
+          <div class="input-group">
+            <h3>Labor Rates</h3>
+            <label>Build LF Per Hour
+              <input id="buildLfPerHour" type="number" min="0.01" step="0.01" value="1">
+            </label>
+            <label>Install LF Per Hour
+              <input id="installLfPerHour" type="number" min="0.01" step="0.01" value="1">
+            </label>
+            <label>Finish LF Per Hour
+              <input id="finishLfPerHour" type="number" min="0.01" step="0.01" value="2">
+            </label>
+            <label>Shop Cost Per Hour ($)
+              <input id="shopCostPerHour" type="number" min="0" step="0.01" value="65">
+            </label>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <section id="resultsSection" class="card results-card">
+      <div class="print-header" aria-hidden="true">
+        <div id="printProjectName" class="print-header-title"></div>
+        <div id="printDate" class="print-header-date"></div>
+      </div>
+      <h2 class="print-hide">Results</h2>
+      <div class="results-grid" id="resultsGrid"></div>
+      <div class="single-row">
+        <button id="printOrderSheetBtn" type="button" class="secondary">Print / Export Order Sheet</button>
+      </div>
+      <div class="results-grid" id="pricingGrid"></div>
+      <div class="formula-note">
+        <p><strong>Back material guess:</strong> width x height per cabinet box, then converted to square feet.</p>
+        <p><strong>Carcass includes:</strong> 2 ends + 1 bottom + 1 full top (or 2 top stretchers for lower cabinets when selected).</p>
+        <p><strong>Drawer estimate:</strong> 2 sides at (height x depth), fronts/backs from lineal inches at height, and bottoms from lineal inches x depth.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

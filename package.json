@@ -1,0 +1,15 @@
+{
+  "name": "cabinet-material-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cabinet material usage calculator with project saving and pricing",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test tests/server.test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
