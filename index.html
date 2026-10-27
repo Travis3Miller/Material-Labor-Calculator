@@ -17,12 +17,14 @@
         <span class="brand-tyro"><span class="brand-t">T</span><span class="brand-rest">YRO</span></span>
       </div>
       <h1>Material Usage Calculator</h1>
+      <p id="welcomeBanner" class="welcome-banner" aria-live="polite">Welcome</p>
       <p class="subtitle">Estimate carcass and back material square footage per lineal foot for lower, upper, and tall cabinets.</p>
       <div id="planBanner" class="plan-banner" role="status">
         <span id="planBadge" class="plan-badge">Free plan</span>
-        <p id="planLabel">Use the core calculator for free. Upgrade through Wix to unlock premium tools.</p>
-        <a id="upgradeLink" class="plan-link" href="https://www.wix.com/" target="_blank" rel="noopener">Upgrade with Wix</a>
+        <p id="planLabel">Calculate and print for free. Upgrade to save projects and personalize your setup.</p>
+        <a id="upgradeLink" class="plan-link" href="" target="_blank" rel="noopener" hidden>Upgrade</a>
       </div>
+      <p id="setupSaveStatus" class="setup-save-status" role="status" aria-live="polite" hidden></p>
     </header>
 
     <section class="card form-card">
@@ -699,6 +701,19 @@
     </section>
   </main>
 
+  <dialog id="paywallDialog" class="paywall-dialog">
+    <div class="paywall-content">
+      <p class="paywall-kicker">Paid plan feature</p>
+      <h2>Make it yours</h2>
+      <p>Calculations and print/export stay free. A paid plan unlocks saved projects, cabinetry standards, materials, and labor setup.</p>
+      <div class="paywall-actions">
+        <a id="paywallUpgradeLink" class="plan-link paywall-upgrade-link" href="" target="_blank" rel="noopener" hidden>View plans</a>
+        <button type="button" class="secondary" onclick="document.getElementById('paywallDialog').close()">Continue with free calculator</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="config.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
