@@ -1,28 +1,184 @@
 const express = require("express");
 const path = require("path");
 const fs = require("fs/promises");
+const crypto = require("crypto");
+const { Pool } = require("pg");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, "data", "store.json");
-const DEFAULT_UPGRADE_URL = process.env.WIX_UPGRADE_URL || "https://www.wix.com/";
-const DEFAULT_PRO_FEATURES = [
-  "Unlimited saved projects",
-  "Advanced reporting tools",
-  "Priority support"
-];
+const DATA_FILE = process.env.CALCULATOR_STORE_FILE || path.join(__dirname, "data", "store.json");
+const PUBLIC_SCOPE = "__public__";
+const database = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL })
+  : null;
+const databaseReady = database
+  ? database.query(`
+      CREATE TABLE IF NOT EXISTS material_labor_stores (
+        scope_id TEXT PRIMARY KEY,
+        store JSONB NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `)
+  : Promise.resolve();
+const SESSION_TTL_MS = 30 * 60 * 1000;
+const PAID_FEATURES = ["Saved projects", "Cabinetry standards setup", "Material setup", "Labor setup"];
+const FREE_FEATURES = ["Core calculator", "Print / export order sheet"];
+let wixClientToken = "";
+let wixClientTokenExpiresAt = 0;
+const entitlementCache = new Map();
 
-function getPlanContext(req = {}) {
-  const planFromQuery = String(req.query?.plan || "").toLowerCase();
-  const planFromHeader = String(req.headers?.["x-plan"] || req.headers?.["x-plan-type"] || "").toLowerCase();
-  const token = String(req.headers?.["x-upgrade-token"] || req.query?.token || "");
-  const isPro = planFromQuery === "pro" || planFromHeader === "pro" || (token && process.env.WIX_ACCESS_TOKEN && token === process.env.WIX_ACCESS_TOKEN);
+function safeCompare(a, b) {
+  const left = Buffer.from(String(a || ""));
+  const right = Buffer.from(String(b || ""));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
 
-  return {
-    plan: isPro ? "pro" : "free",
-    upgradeUrl: process.env.WIX_UPGRADE_URL || DEFAULT_UPGRADE_URL,
-    features: isPro ? DEFAULT_PRO_FEATURES : ["Core calculator", "Saved projects", "Basic quoting"]
-  };
+function encodeTokenPart(value) {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function sessionSecret() {
+  return String(process.env.SESSION_SECRET || "").trim();
+}
+
+function createSessionToken(payload) {
+  const secret = sessionSecret();
+  if (!secret) {
+    throw new Error("SESSION_SECRET is not configured.");
+  }
+  const body = encodeTokenPart(payload);
+  const signature = crypto.createHmac("sha256", secret).update(body).digest("base64url");
+  return `${body}.${signature}`;
+}
+
+function verifySessionToken(token) {
+  const [body, signature, extra] = String(token || "").split(".");
+  const secret = sessionSecret();
+  if (!body || !signature || extra || !secret) {
+    return null;
+  }
+  const expected = crypto.createHmac("sha256", secret).update(body).digest("base64url");
+  if (!safeCompare(signature, expected)) {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (!payload || !payload.sub || !Number.isFinite(payload.exp) || payload.exp <= Date.now()) {
+      return null;
+    }
+    return payload;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function trustedWixBridge(req) {
+  const secret = String(process.env.MATERIAL_LABOR_BRIDGE_SECRET || "").trim();
+  return Boolean(secret && safeCompare(req.get("x-wix-bridge-secret"), secret));
+}
+
+function paidPlanIds() {
+  return new Set(String(process.env.WIX_PAID_PLAN_IDS || "")
+    .split(",")
+    .map((id) => id.trim().toUpperCase())
+    .filter(Boolean));
+}
+
+async function getWixClientAccessToken() {
+  const clientId = String(process.env.WIX_CLIENT_ID || "").trim();
+  const clientSecret = String(process.env.WIX_CLIENT_SECRET || "").trim();
+  if (!clientId || !clientSecret) {
+    return null;
+  }
+  if (wixClientToken && wixClientTokenExpiresAt > Date.now() + 30_000) {
+    return wixClientToken;
+  }
+  const response = await fetch("https://www.wixapis.com/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: clientSecret
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Wix token request failed with ${response.status}.`);
+  }
+  const body = await response.json();
+  if (!body || typeof body.access_token !== "string" || !body.access_token.trim()) {
+    throw new Error("Wix token response did not include an access token.");
+  }
+  wixClientToken = body.access_token.trim();
+  wixClientTokenExpiresAt = Date.now() + Math.max(60, Number(body.expires_in) || 240) * 1000;
+  return wixClientToken;
+}
+
+async function hasPaidAccess(memberId) {
+  if (!memberId || !paidPlanIds().size) {
+    return false;
+  }
+  const cached = entitlementCache.get(memberId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.allowed;
+  }
+  const token = await getWixClientAccessToken();
+  if (!token) {
+    return false;
+  }
+  const url = new URL("https://www.wixapis.com/pricing-plans/v2/orders");
+  url.searchParams.set("buyerIds", memberId);
+  url.searchParams.set("orderStatuses", "ACTIVE");
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  if (process.env.WIX_SITE_ID) {
+    headers["wix-site-id"] = process.env.WIX_SITE_ID;
+  }
+  const response = await fetch(url, {
+    headers
+  });
+  if (!response.ok) {
+    throw new Error(`Wix plan verification failed with ${response.status}.`);
+  }
+  const result = await response.json();
+  const orders = Array.isArray(result)
+    ? result
+    : Array.isArray(result.orders)
+      ? result.orders
+      : result.orders && Array.isArray(result.orders.results)
+        ? result.orders.results
+        : result.data && Array.isArray(result.data.orders)
+          ? result.data.orders
+          : [];
+  const allowed = Array.isArray(orders) && orders.some((order) =>
+    String(order.status || "").toUpperCase() === "ACTIVE"
+      && paidPlanIds().has(String(order.planId || "").toUpperCase())
+  );
+  entitlementCache.set(memberId, { allowed, expiresAt: Date.now() + 60_000 });
+  return allowed;
+}
+
+function requireAuth(req, res, next) {
+  if (!req.currentUser) {
+    res.status(401).json({ error: "Authentication required." });
+    return;
+  }
+  next();
+}
+
+async function requireSubscriber(req, res, next) {
+  try {
+    if (!req.currentUser) {
+      res.status(401).json({ error: "Authentication required." });
+      return;
+    }
+    if (!(await hasPaidAccess(req.currentUser.sub))) {
+      res.status(403).json({ error: "Active paid subscription required." });
+      return;
+    }
+    next();
+  } catch (_err) {
+    res.status(503).json({ error: "Could not verify subscription access." });
+  }
 }
 
 async function ensureStoreFile() {
@@ -36,47 +192,223 @@ async function ensureStoreFile() {
 
 app.use(express.json());
 app.use(express.static(__dirname));
+app.use((req, _res, next) => {
+  const authorization = String(req.get("authorization") || "");
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i);
+  req.currentUser = bearer ? verifySessionToken(bearer[1].trim()) : null;
+  next();
+});
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", service: "cabinet-material-calculator" });
 });
 
-app.get("/api/config", (req, res) => {
-  const plan = getPlanContext(req);
+app.get("/api/config", async (req, res) => {
+  let isPro = false;
+  try {
+    isPro = Boolean(req.currentUser && await hasPaidAccess(req.currentUser.sub));
+  } catch (_err) {
+    res.status(503).json({ error: "Could not verify subscription access." });
+    return;
+  }
   res.json({
-    plan: plan.plan,
-    upgradeUrl: plan.upgradeUrl,
-    upgradeLink: plan.upgradeUrl,
-    freeFeatures: ["Core calculator", "Saved projects", "Basic quoting"],
-    proFeatures: DEFAULT_PRO_FEATURES,
+    authenticated: Boolean(req.currentUser),
+    name: req.currentUser ? req.currentUser.name : "",
+    plan: isPro ? "pro" : "free",
+    upgradeUrl: process.env.WIX_UPGRADE_URL || "",
+    freeFeatures: FREE_FEATURES,
+    proFeatures: PAID_FEATURES,
     appName: "Cabinet Material Calculator"
   });
 });
 
-app.get("/api/plan", (req, res) => {
-  res.json(getPlanContext(req));
-});
-
-app.post("/api/upgrade/verify", (req, res) => {
-  const token = String(req.body?.token || req.query?.token || "");
-  const context = getPlanContext(req);
-
-  if (process.env.WIX_ACCESS_TOKEN && token && token === process.env.WIX_ACCESS_TOKEN) {
-    return res.json({ plan: "pro", upgradeUrl: context.upgradeUrl, message: "Wix upgrade token accepted." });
+app.get("/api/auth/session", async (req, res) => {
+  let isPro = false;
+  try {
+    isPro = Boolean(req.currentUser && await hasPaidAccess(req.currentUser.sub));
+  } catch (_err) {
+    res.status(503).json({ error: "Could not verify subscription access." });
+    return;
   }
-
-  return res.json({ plan: "free", upgradeUrl: context.upgradeUrl, message: "Free access remains active until a Wix-provided upgrade token is verified." });
+  res.json({
+    authenticated: Boolean(req.currentUser),
+    user: req.currentUser ? {
+      id: req.currentUser.sub,
+      email: req.currentUser.email || "",
+      name: req.currentUser.name || ""
+    } : null,
+    plan: isPro ? "pro" : "free"
+  });
 });
 
-async function readStore() {
+app.post("/api/auth/wix/bridge", async (req, res) => {
+  if (!trustedWixBridge(req)) {
+    res.status(401).json({ error: "Untrusted Wix bridge request." });
+    return;
+  }
+  if (!sessionSecret()) {
+    res.status(503).json({ error: "SESSION_SECRET is not configured." });
+    return;
+  }
+  const source = req.body && typeof req.body === "object" ? req.body : {};
+  const memberId = typeof source.externalMemberId === "string" ? source.externalMemberId.trim().slice(0, 200) : "";
+  if (!memberId) {
+    res.status(400).json({ error: "Wix member ID is required." });
+    return;
+  }
+  try {
+    const paid = await hasPaidAccess(memberId);
+    const user = {
+      id: memberId,
+      email: typeof source.email === "string" ? source.email.trim().slice(0, 320) : "",
+      name: typeof source.name === "string" ? source.name.trim().slice(0, 100) : ""
+    };
+    const sessionToken = createSessionToken({
+      sub: memberId,
+      email: user.email,
+      name: user.name,
+      exp: Date.now() + SESSION_TTL_MS
+    });
+    res.json({ authenticated: true, user, plan: paid ? "pro" : "free", paid, sessionToken });
+  } catch (_err) {
+    res.status(503).json({ error: "Could not establish Wix member session." });
+  }
+});
+
+app.post("/api/auth/logout", (_req, res) => {
+  res.json({ ok: true });
+});
+
+app.use("/api/projects", (req, res, next) => {
+  if (req.method === "GET") {
+    requireAuth(req, res, next);
+    return;
+  }
+  requireSubscriber(req, res, next);
+});
+
+app.use("/api/catalog", (req, res, next) => {
+  if (req.method === "GET") {
+    next();
+    return;
+  }
+  requireSubscriber(req, res, next);
+});
+
+app.use("/api/settings", (req, res, next) => {
+  if (req.method === "GET") {
+    requireAuth(req, res, next);
+    return;
+  }
+  requireSubscriber(req, res, next);
+});
+
+app.get("/api/settings", async (req, res) => {
+  try {
+    const store = await readStore(req);
+    res.json(store.settings || {});
+  } catch (_err) {
+    res.status(500).json({ error: "Could not load setup settings." });
+  }
+});
+
+app.put("/api/settings", async (req, res) => {
+  try {
+    const store = await readStore(req);
+    const input = req.body && typeof req.body === "object" && !Array.isArray(req.body)
+      ? req.body
+      : {};
+    store.settings = {
+      wasteFactorPercent: Number.isFinite(Number(input.wasteFactorPercent))
+        ? Math.max(0, Number(input.wasteFactorPercent))
+        : 15,
+      buildLfPerHour: Number.isFinite(Number(input.buildLfPerHour))
+        ? Math.max(0.01, Number(input.buildLfPerHour))
+        : 1,
+      installLfPerHour: Number.isFinite(Number(input.installLfPerHour))
+        ? Math.max(0.01, Number(input.installLfPerHour))
+        : 1,
+      finishLfPerHour: Number.isFinite(Number(input.finishLfPerHour))
+        ? Math.max(0.01, Number(input.finishLfPerHour))
+        : 2,
+      shopCostPerHour: Number.isFinite(Number(input.shopCostPerHour))
+        ? Math.max(0, Number(input.shopCostPerHour))
+        : 65,
+      standards: input.standards && typeof input.standards === "object" && !Array.isArray(input.standards)
+        ? input.standards
+        : {}
+    };
+    await writeStore(req, store);
+    res.json(store.settings);
+  } catch (_err) {
+    res.status(500).json({ error: "Could not save setup settings." });
+  }
+});
+
+async function readStore(req) {
+  await databaseReady;
+  const userId = req && req.currentUser && req.currentUser.sub;
+  if (database) {
+    const scopeId = userId || PUBLIC_SCOPE;
+    const result = await database.query(
+      "SELECT store FROM material_labor_stores WHERE scope_id = $1",
+      [scopeId]
+    );
+    if (result.rows[0]) {
+      const store = normalizeStore(result.rows[0].store);
+      return userId ? store : { ...store, projects: [] };
+    }
+    if (userId) {
+      const shared = await database.query(
+        "SELECT store FROM material_labor_stores WHERE scope_id = $1",
+        [PUBLIC_SCOPE]
+      );
+      if (shared.rows[0]) {
+        return { ...normalizeStore(shared.rows[0].store), projects: [] };
+      }
+    }
+  }
   await ensureStoreFile();
   const raw = await fs.readFile(DATA_FILE, "utf8");
-  return normalizeStore(JSON.parse(raw));
+  const stored = JSON.parse(raw);
+  const globalStore = normalizeStore(stored.global || stored);
+  if (!userId) {
+    return { ...globalStore, projects: [] };
+  }
+  if (database) {
+    return { ...globalStore, projects: [] };
+  }
+  const userKey = `member:${Buffer.from(userId).toString("base64url")}`;
+  const userStore = stored.users && stored.users[userKey];
+  if (userStore) {
+    return normalizeStore(userStore);
+  }
+  return { ...globalStore, projects: [] };
 }
 
-async function writeStore(store) {
+async function writeStore(req, store) {
+  const userId = req && req.currentUser && req.currentUser.sub;
+  if (!userId) {
+    throw new Error("Authenticated user required to save app data.");
+  }
+  await databaseReady;
+  if (database) {
+    await database.query(
+      `INSERT INTO material_labor_stores (scope_id, store, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (scope_id) DO UPDATE
+       SET store = EXCLUDED.store, updated_at = NOW()`,
+      [userId, JSON.stringify(normalizeStore(store))]
+    );
+    return;
+  }
   await ensureStoreFile();
-  await fs.writeFile(DATA_FILE, JSON.stringify(store, null, 2), "utf8");
+  const stored = JSON.parse(await fs.readFile(DATA_FILE, "utf8"));
+  const globalStore = normalizeStore(stored.global || stored);
+  const users = stored.users && typeof stored.users === "object" ? stored.users : Object.create(null);
+  const userKey = `member:${Buffer.from(userId).toString("base64url")}`;
+  users[userKey] = normalizeStore(store);
+  await fs.writeFile(DATA_FILE, JSON.stringify({ global: globalStore, users }, null, 2), "utf8");
 }
 
 function normalizeStore(store) {
@@ -121,6 +453,9 @@ function normalizeStore(store) {
 
   return {
     projects: Array.isArray(store.projects) ? store.projects : [],
+    settings: store.settings && typeof store.settings === "object" && !Array.isArray(store.settings)
+      ? store.settings
+      : {},
     materialCatalog: Array.isArray(store.materialCatalog) ? store.materialCatalog : [],
     slideCatalog: Array.isArray(store.slideCatalog) ? store.slideCatalog : [],
     accessoryCatalog: Array.isArray(store.accessoryCatalog) ? store.accessoryCatalog : [],
@@ -140,7 +475,7 @@ function newId() {
 
 app.get("/api/projects", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     res.json(store.projects || []);
   } catch (err) {
     res.status(500).json({ error: "Could not load projects." });
@@ -155,7 +490,7 @@ app.post("/api/projects", async (req, res) => {
       return res.status(400).json({ error: "Project name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const now = new Date().toISOString();
     const project = {
       id: newId(),
@@ -169,7 +504,7 @@ app.post("/api/projects", async (req, res) => {
 
     store.projects = store.projects || [];
     store.projects.push(project);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(project);
   } catch (err) {
     res.status(500).json({ error: "Could not save project." });
@@ -178,7 +513,7 @@ app.post("/api/projects", async (req, res) => {
 
 app.put("/api/projects/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = (store.projects || []).findIndex((p) => p.id === req.params.id);
 
     if (idx < 0) {
@@ -198,7 +533,7 @@ app.put("/api/projects/:id", async (req, res) => {
     };
 
     store.projects[idx] = updated;
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: "Could not update project." });
@@ -207,7 +542,7 @@ app.put("/api/projects/:id", async (req, res) => {
 
 app.get("/api/catalog", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     res.json({
       materials: store.materialCatalog,
       slides: store.slideCatalog,
@@ -247,7 +582,7 @@ app.put("/api/catalog/construction-assumptions/:type", async (req, res) => {
       avgWidth: Number(body.avgWidth) || 18
     };
 
-    const store = await readStore();
+    const store = await readStore(req);
     store.constructionAssumptionCatalog = store.constructionAssumptionCatalog.filter((item) => item.type !== type);
     store.constructionAssumptionCatalog.push(assumption);
     await writeStore(normalizeStore(store));
@@ -278,7 +613,7 @@ app.post("/api/catalog/materials", async (req, res) => {
       return res.status(400).json({ error: "Material name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const item = {
       id: newId(),
       category,
@@ -292,7 +627,7 @@ app.post("/api/catalog/materials", async (req, res) => {
     };
 
     store.materialCatalog.push(item);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ error: "Could not save material." });
@@ -302,7 +637,7 @@ app.post("/api/catalog/materials", async (req, res) => {
 app.put("/api/catalog/materials/:id", async (req, res) => {
   try {
     const { name, category, thickness, length, width, costPerSheet, wasteFactorPercent, wasteMultiplier } = req.body || {};
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = store.materialCatalog.findIndex((m) => m.id === req.params.id);
 
     if (idx < 0) {
@@ -321,7 +656,7 @@ app.put("/api/catalog/materials/:id", async (req, res) => {
       wasteMultiplier: Number(wasteMultiplier) || store.materialCatalog[idx].wasteMultiplier || 1
     };
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(store.materialCatalog[idx]);
   } catch (err) {
     res.status(500).json({ error: "Could not update material." });
@@ -330,7 +665,7 @@ app.put("/api/catalog/materials/:id", async (req, res) => {
 
 app.delete("/api/catalog/materials/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = store.materialCatalog.length;
     store.materialCatalog = store.materialCatalog.filter((m) => m.id !== req.params.id);
 
@@ -338,7 +673,7 @@ app.delete("/api/catalog/materials/:id", async (req, res) => {
       return res.status(404).json({ error: "Material not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete material." });
@@ -353,7 +688,7 @@ app.post("/api/catalog/slides", async (req, res) => {
       return res.status(400).json({ error: "Slide name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const slide = {
       id: newId(),
       name: name.trim(),
@@ -363,7 +698,7 @@ app.post("/api/catalog/slides", async (req, res) => {
     };
 
     store.slideCatalog.push(slide);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(slide);
   } catch (err) {
     res.status(500).json({ error: "Could not save drawer slide." });
@@ -373,7 +708,7 @@ app.post("/api/catalog/slides", async (req, res) => {
 app.put("/api/catalog/slides/:id", async (req, res) => {
   try {
     const { name, costPerPair, wasteFactorPercent, wasteMultiplier } = req.body || {};
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = store.slideCatalog.findIndex((s) => s.id === req.params.id);
 
     if (idx < 0) {
@@ -388,7 +723,7 @@ app.put("/api/catalog/slides/:id", async (req, res) => {
       wasteMultiplier: Number(wasteMultiplier) || store.slideCatalog[idx].wasteMultiplier || 1
     };
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(store.slideCatalog[idx]);
   } catch (err) {
     res.status(500).json({ error: "Could not update drawer slide." });
@@ -397,7 +732,7 @@ app.put("/api/catalog/slides/:id", async (req, res) => {
 
 app.delete("/api/catalog/slides/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = store.slideCatalog.length;
     store.slideCatalog = store.slideCatalog.filter((s) => s.id !== req.params.id);
 
@@ -405,7 +740,7 @@ app.delete("/api/catalog/slides/:id", async (req, res) => {
       return res.status(404).json({ error: "Slide type not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete drawer slide." });
@@ -420,7 +755,7 @@ app.post("/api/catalog/accessories", async (req, res) => {
       return res.status(400).json({ error: "Accessory name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const accessory = {
       id: newId(),
       name: name.trim(),
@@ -428,7 +763,7 @@ app.post("/api/catalog/accessories", async (req, res) => {
     };
 
     store.accessoryCatalog.push(accessory);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(accessory);
   } catch (err) {
     res.status(500).json({ error: "Could not save accessory." });
@@ -438,7 +773,7 @@ app.post("/api/catalog/accessories", async (req, res) => {
 app.put("/api/catalog/accessories/:id", async (req, res) => {
   try {
     const { name, costEach } = req.body || {};
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = store.accessoryCatalog.findIndex((a) => a.id === req.params.id);
 
     if (idx < 0) {
@@ -451,7 +786,7 @@ app.put("/api/catalog/accessories/:id", async (req, res) => {
       costEach: Number(costEach) || store.accessoryCatalog[idx].costEach || 0
     };
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(store.accessoryCatalog[idx]);
   } catch (err) {
     res.status(500).json({ error: "Could not update accessory." });
@@ -460,7 +795,7 @@ app.put("/api/catalog/accessories/:id", async (req, res) => {
 
 app.delete("/api/catalog/accessories/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = store.accessoryCatalog.length;
     store.accessoryCatalog = store.accessoryCatalog.filter((a) => a.id !== req.params.id);
 
@@ -468,7 +803,7 @@ app.delete("/api/catalog/accessories/:id", async (req, res) => {
       return res.status(404).json({ error: "Accessory not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete accessory." });
@@ -483,7 +818,7 @@ app.post("/api/catalog/door-styles", async (req, res) => {
       return res.status(400).json({ error: "Door style name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const style = {
       id: newId(),
       name: name.trim(),
@@ -491,7 +826,7 @@ app.post("/api/catalog/door-styles", async (req, res) => {
     };
 
     store.doorStyleCatalog.push(style);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(style);
   } catch (err) {
     res.status(500).json({ error: "Could not save door style." });
@@ -501,7 +836,7 @@ app.post("/api/catalog/door-styles", async (req, res) => {
 app.put("/api/catalog/door-styles/:id", async (req, res) => {
   try {
     const { name, costPerSqFt } = req.body || {};
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = store.doorStyleCatalog.findIndex((s) => s.id === req.params.id);
 
     if (idx < 0) {
@@ -514,7 +849,7 @@ app.put("/api/catalog/door-styles/:id", async (req, res) => {
       costPerSqFt: Number(costPerSqFt) || store.doorStyleCatalog[idx].costPerSqFt || 0
     };
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(store.doorStyleCatalog[idx]);
   } catch (err) {
     res.status(500).json({ error: "Could not update door style." });
@@ -523,7 +858,7 @@ app.put("/api/catalog/door-styles/:id", async (req, res) => {
 
 app.delete("/api/catalog/door-styles/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = store.doorStyleCatalog.length;
     store.doorStyleCatalog = store.doorStyleCatalog.filter((d) => d.id !== req.params.id);
 
@@ -531,7 +866,7 @@ app.delete("/api/catalog/door-styles/:id", async (req, res) => {
       return res.status(404).json({ error: "Door style not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete door style." });
@@ -546,7 +881,7 @@ app.post("/api/catalog/paint-types", async (req, res) => {
       return res.status(400).json({ error: "Paint type name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const item = {
       id: newId(),
       name: name.trim(),
@@ -555,7 +890,7 @@ app.post("/api/catalog/paint-types", async (req, res) => {
     };
 
     store.paintTypeCatalog.push(item);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ error: "Could not save paint type." });
@@ -565,7 +900,7 @@ app.post("/api/catalog/paint-types", async (req, res) => {
 app.put("/api/catalog/paint-types/:id", async (req, res) => {
   try {
     const { name, primerCostPerGallon, topcoatCostPerGallon } = req.body || {};
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = store.paintTypeCatalog.findIndex((p) => p.id === req.params.id);
 
     if (idx < 0) {
@@ -579,7 +914,7 @@ app.put("/api/catalog/paint-types/:id", async (req, res) => {
       topcoatCostPerGallon: Number(topcoatCostPerGallon) || store.paintTypeCatalog[idx].topcoatCostPerGallon || 0
     };
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(store.paintTypeCatalog[idx]);
   } catch (err) {
     res.status(500).json({ error: "Could not update paint type." });
@@ -588,7 +923,7 @@ app.put("/api/catalog/paint-types/:id", async (req, res) => {
 
 app.delete("/api/catalog/paint-types/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = store.paintTypeCatalog.length;
     store.paintTypeCatalog = store.paintTypeCatalog.filter((p) => p.id !== req.params.id);
 
@@ -596,7 +931,7 @@ app.delete("/api/catalog/paint-types/:id", async (req, res) => {
       return res.status(404).json({ error: "Paint type not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete paint type." });
@@ -611,7 +946,7 @@ app.post("/api/catalog/hinge-types", async (req, res) => {
       return res.status(400).json({ error: "Hinge type name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const item = {
       id: newId(),
       name: name.trim(),
@@ -621,7 +956,7 @@ app.post("/api/catalog/hinge-types", async (req, res) => {
     };
 
     store.hingeTypeCatalog.push(item);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ error: "Could not save hinge type." });
@@ -631,7 +966,7 @@ app.post("/api/catalog/hinge-types", async (req, res) => {
 app.put("/api/catalog/hinge-types/:id", async (req, res) => {
   try {
     const { name, costEach, wasteFactorPercent, wasteMultiplier } = req.body || {};
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = store.hingeTypeCatalog.findIndex((h) => h.id === req.params.id);
 
     if (idx < 0) {
@@ -646,7 +981,7 @@ app.put("/api/catalog/hinge-types/:id", async (req, res) => {
       wasteMultiplier: Number(wasteMultiplier) || store.hingeTypeCatalog[idx].wasteMultiplier || 1
     };
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(store.hingeTypeCatalog[idx]);
   } catch (err) {
     res.status(500).json({ error: "Could not update hinge type." });
@@ -655,7 +990,7 @@ app.put("/api/catalog/hinge-types/:id", async (req, res) => {
 
 app.delete("/api/catalog/hinge-types/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = store.hingeTypeCatalog.length;
     store.hingeTypeCatalog = store.hingeTypeCatalog.filter((h) => h.id !== req.params.id);
 
@@ -663,7 +998,7 @@ app.delete("/api/catalog/hinge-types/:id", async (req, res) => {
       return res.status(404).json({ error: "Hinge type not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete hinge type." });
@@ -678,7 +1013,7 @@ app.post("/api/catalog/base-plate-types", async (req, res) => {
       return res.status(400).json({ error: "Base plate type name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const item = {
       id: newId(),
       name: name.trim(),
@@ -688,7 +1023,7 @@ app.post("/api/catalog/base-plate-types", async (req, res) => {
     };
 
     store.basePlateTypeCatalog.push(item);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ error: "Could not save base plate type." });
@@ -698,7 +1033,7 @@ app.post("/api/catalog/base-plate-types", async (req, res) => {
 app.put("/api/catalog/base-plate-types/:id", async (req, res) => {
   try {
     const { name, costEach, wasteFactorPercent, wasteMultiplier } = req.body || {};
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = store.basePlateTypeCatalog.findIndex((b) => b.id === req.params.id);
 
     if (idx < 0) {
@@ -713,7 +1048,7 @@ app.put("/api/catalog/base-plate-types/:id", async (req, res) => {
       wasteMultiplier: Number(wasteMultiplier) || store.basePlateTypeCatalog[idx].wasteMultiplier || 1
     };
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(store.basePlateTypeCatalog[idx]);
   } catch (err) {
     res.status(500).json({ error: "Could not update base plate type." });
@@ -722,7 +1057,7 @@ app.put("/api/catalog/base-plate-types/:id", async (req, res) => {
 
 app.delete("/api/catalog/base-plate-types/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = store.basePlateTypeCatalog.length;
     store.basePlateTypeCatalog = store.basePlateTypeCatalog.filter((b) => b.id !== req.params.id);
 
@@ -730,7 +1065,7 @@ app.delete("/api/catalog/base-plate-types/:id", async (req, res) => {
       return res.status(404).json({ error: "Base plate type not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete base plate type." });
@@ -745,7 +1080,7 @@ app.post("/api/catalog/board-stocks", async (req, res) => {
       return res.status(400).json({ error: "Board stock name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const item = {
       id: newId(),
       name: name.trim(),
@@ -756,7 +1091,7 @@ app.post("/api/catalog/board-stocks", async (req, res) => {
     };
 
     store.boardStockCatalog.push(item);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ error: "Could not save board stock." });
@@ -766,7 +1101,7 @@ app.post("/api/catalog/board-stocks", async (req, res) => {
 app.put("/api/catalog/board-stocks/:id", async (req, res) => {
   try {
     const { name, costPerBdFt, wasteMultiplier, wasteFactorPercent, usedFor } = req.body || {};
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = store.boardStockCatalog.findIndex((b) => b.id === req.params.id);
 
     if (idx < 0) {
@@ -782,7 +1117,7 @@ app.put("/api/catalog/board-stocks/:id", async (req, res) => {
       usedFor: typeof usedFor === "string" ? usedFor : (store.boardStockCatalog[idx].usedFor || "Face Frames")
     };
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(store.boardStockCatalog[idx]);
   } catch (err) {
     res.status(500).json({ error: "Could not update board stock." });
@@ -791,7 +1126,7 @@ app.put("/api/catalog/board-stocks/:id", async (req, res) => {
 
 app.delete("/api/catalog/board-stocks/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = store.boardStockCatalog.length;
     store.boardStockCatalog = store.boardStockCatalog.filter((b) => b.id !== req.params.id);
 
@@ -799,7 +1134,7 @@ app.delete("/api/catalog/board-stocks/:id", async (req, res) => {
       return res.status(404).json({ error: "Board stock not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete board stock." });
@@ -814,7 +1149,7 @@ app.post("/api/catalog/crown-mouldings", async (req, res) => {
       return res.status(400).json({ error: "Crown moulding name is required." });
     }
 
-    const store = await readStore();
+    const store = await readStore(req);
     const item = {
       id: newId(),
       name: name.trim(),
@@ -826,7 +1161,7 @@ app.post("/api/catalog/crown-mouldings", async (req, res) => {
 
     store.crownMouldingCatalog = store.crownMouldingCatalog || [];
     store.crownMouldingCatalog.push(item);
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ error: "Could not save crown moulding." });
@@ -836,7 +1171,7 @@ app.post("/api/catalog/crown-mouldings", async (req, res) => {
 app.put("/api/catalog/crown-mouldings/:id", async (req, res) => {
   try {
     const { name, costPerLf, wasteMultiplier, wasteFactorPercent, usedFor } = req.body || {};
-    const store = await readStore();
+    const store = await readStore(req);
     const idx = (store.crownMouldingCatalog || []).findIndex((c) => c.id === req.params.id);
 
     if (idx < 0) {
@@ -852,7 +1187,7 @@ app.put("/api/catalog/crown-mouldings/:id", async (req, res) => {
       usedFor: typeof usedFor === "string" ? usedFor : (store.crownMouldingCatalog[idx].usedFor || "Crown Moulding")
     };
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.json(store.crownMouldingCatalog[idx]);
   } catch (err) {
     res.status(500).json({ error: "Could not update crown moulding." });
@@ -861,7 +1196,7 @@ app.put("/api/catalog/crown-mouldings/:id", async (req, res) => {
 
 app.delete("/api/catalog/crown-mouldings/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = (store.crownMouldingCatalog || []).length;
     store.crownMouldingCatalog = (store.crownMouldingCatalog || []).filter((item) => item.id !== req.params.id);
 
@@ -869,7 +1204,7 @@ app.delete("/api/catalog/crown-mouldings/:id", async (req, res) => {
       return res.status(404).json({ error: "Crown moulding not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete crown moulding." });
@@ -878,7 +1213,7 @@ app.delete("/api/catalog/crown-mouldings/:id", async (req, res) => {
 
 app.delete("/api/projects/:id", async (req, res) => {
   try {
-    const store = await readStore();
+    const store = await readStore(req);
     const before = (store.projects || []).length;
     store.projects = (store.projects || []).filter((p) => p.id !== req.params.id);
 
@@ -886,7 +1221,7 @@ app.delete("/api/projects/:id", async (req, res) => {
       return res.status(404).json({ error: "Project not found." });
     }
 
-    await writeStore(store);
+    await writeStore(req, store);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete project." });
@@ -894,9 +1229,16 @@ app.delete("/api/projects/:id", async (req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`Cabinet calculator running at http://localhost:${PORT}`);
-  });
+  databaseReady
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`Cabinet calculator running at http://localhost:${PORT}`);
+      });
+    })
+    .catch((err) => {
+      console.error("Could not initialize app storage.", err);
+      process.exitCode = 1;
+    });
 }
 
 module.exports = {

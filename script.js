@@ -41,8 +41,250 @@ const state = {
   jobAccessories: [],
   dataMode: "unknown",
   plan: "free",
-  config: null
+  config: null,
+  memberName: "",
+  memberId: "",
+  sessionToken: "",
+  authenticated: false,
+  restoringSettings: false
 };
+
+function apiFetch(path, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (state.sessionToken) {
+    headers.set("Authorization", "Bearer " + state.sessionToken);
+  }
+  return fetch(path, { ...options, headers });
+}
+
+function localStorageKey(key) {
+  return state.memberId ? `${key}:${encodeURIComponent(state.memberId)}` : key;
+}
+
+let setupSettingsTimer;
+
+function collectSetupSettings() {
+  return {
+    wasteFactorPercent: toNumber(byId("wasteFactorPercent")?.value),
+    buildLfPerHour: toNumber(byId("buildLfPerHour")?.value),
+    installLfPerHour: toNumber(byId("installLfPerHour")?.value),
+    finishLfPerHour: toNumber(byId("finishLfPerHour")?.value),
+    shopCostPerHour: toNumber(byId("shopCostPerHour")?.value),
+    standards: readLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), defaultStandards())
+  };
+}
+
+function scheduleSetupSettingsSave() {
+  if (state.restoringSettings || state.plan !== "pro" || !state.sessionToken) {
+    return;
+  }
+  const status = byId("setupSaveStatus");
+  if (status) {
+    status.hidden = false;
+    status.textContent = "Saving your setup…";
+  }
+  clearTimeout(setupSettingsTimer);
+  setupSettingsTimer = setTimeout(async () => {
+    try {
+      const response = await apiFetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(collectSetupSettings())
+      });
+      if (!response.ok) {
+        throw new Error("Could not save personalized setup.");
+      }
+      if (status) {
+        status.textContent = "Your setup is saved to your account.";
+      }
+    } catch (err) {
+      if (status) {
+        status.textContent = "Could not save your setup. Please try again.";
+      }
+      console.error("Could not save personalized setup.", err);
+    }
+  }, 350);
+}
+
+async function loadSetupSettings() {
+  if (state.plan !== "pro" || !state.sessionToken) {
+    return;
+  }
+  const response = await apiFetch("/api/settings");
+  if (!response.ok) {
+    throw new Error("Could not load personalized setup.");
+  }
+  const settings = await response.json();
+  state.restoringSettings = true;
+  ["wasteFactorPercent", "buildLfPerHour", "installLfPerHour", "finishLfPerHour", "shopCostPerHour"]
+    .forEach((id) => {
+      if (settings[id] !== undefined && byId(id)) {
+        byId(id).value = String(settings[id]);
+      }
+    });
+  if (settings.standards && typeof settings.standards === "object") {
+    writeLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), settings.standards);
+  }
+  state.restoringSettings = false;
+  renderDefaultsUi();
+  const status = byId("setupSaveStatus");
+  if (status) {
+    status.hidden = false;
+    status.textContent = "Your personalized setup is loaded.";
+  }
+}
+
+const WIX_PARENT_ORIGINS = Array.isArray(window.MATERIAL_LABOR_CONFIG?.wixParentOrigins)
+  ? window.MATERIAL_LABOR_CONFIG.wixParentOrigins
+    .map((origin) => String(origin).trim().replace(/\/+$/, ""))
+    .filter(Boolean)
+  : [];
+
+function setWelcomeName(name) {
+  const banner = byId("welcomeBanner");
+  const firstName = String(name || "").trim().split(/\s+/)[0];
+  if (banner) {
+    banner.textContent = firstName ? `Welcome, ${firstName}` : "Welcome";
+  }
+}
+
+function resetSetupSettings() {
+  clearTimeout(setupSettingsTimer);
+  localStorage.removeItem(localStorageKey(LOCAL_STANDARDS_KEY));
+  const defaults = {
+    wasteFactorPercent: 15,
+    buildLfPerHour: 1,
+    installLfPerHour: 1,
+    finishLfPerHour: 2,
+    shopCostPerHour: 65
+  };
+  Object.entries(defaults).forEach(([id, value]) => {
+    if (byId(id)) {
+      byId(id).value = String(value);
+    }
+  });
+  renderDefaultsUi();
+}
+
+function openPaywall() {
+  const dialog = byId("paywallDialog");
+  const upgradeLink = byId("paywallUpgradeLink");
+  if (upgradeLink) {
+    const upgradeUrl = state.config?.upgradeUrl || "";
+    if (upgradeUrl) {
+      upgradeLink.href = upgradeUrl;
+    } else {
+      upgradeLink.removeAttribute("href");
+    }
+    upgradeLink.hidden = !upgradeUrl;
+  }
+  if (dialog && typeof dialog.showModal === "function" && !dialog.open) {
+    dialog.showModal();
+  } else if (!dialog) {
+    alert("This feature is part of the paid plan. Upgrade to save projects and customize your setup.");
+  }
+}
+
+function applyPlanConfig(config) {
+  const previousPlan = state.plan;
+  state.config = config;
+  state.plan = config.plan === "pro" ? "pro" : "free";
+  state.authenticated = config.authenticated === true;
+  if (previousPlan === "pro" && state.plan !== "pro") {
+    resetSetupSettings();
+  }
+  const badge = byId("planBadge");
+  const label = byId("planLabel");
+  const link = byId("upgradeLink");
+  if (badge) {
+    badge.textContent = state.plan === "pro" ? "Paid plan active" : "Free plan";
+  }
+  if (label) {
+    label.textContent = state.plan === "pro"
+      ? "Your paid plan unlocks saved projects and personalized setup."
+      : "Calculate and print for free. Upgrade to save projects and personalize your setup.";
+  }
+  if (link) {
+    const upgradeUrl = config.upgradeUrl || "";
+    if (upgradeUrl) {
+      link.href = upgradeUrl;
+    } else {
+      link.removeAttribute("href");
+    }
+    link.hidden = !upgradeUrl;
+    link.textContent = state.plan === "pro" ? "Manage membership" : "Upgrade";
+  }
+  ["cabinetStandardsTabBtn", "materialSetupTabBtn", "laborSetupTabBtn"].forEach((id) => {
+    const button = byId(id);
+    if (button) {
+      button.classList.toggle("locked-tab", state.plan !== "pro");
+      button.title = state.plan === "pro" ? "" : "Paid plan required";
+    }
+  });
+  if (state.plan !== "pro" && byId("calculatorTab").classList.contains("hidden")) {
+    switchTab("calculator");
+  }
+  if (state.plan !== "pro" && !byId("calculatorTab").classList.contains("hidden")) {
+    populateProjects();
+  }
+}
+
+function listenForWixMember() {
+  if (!WIX_PARENT_ORIGINS.length) {
+    return;
+  }
+  window.addEventListener("message", async (event) => {
+    if (!WIX_PARENT_ORIGINS.includes(event.origin) || !event.data) {
+      return;
+    }
+    if (event.data.type === "wix-member-logout") {
+      state.sessionToken = "";
+      state.memberName = "";
+      resetSetupSettings();
+      state.memberId = "";
+      state.authenticated = false;
+      state.plan = "free";
+      state.dataMode = "unknown";
+      setWelcomeName("");
+      await hydratePlanBanner();
+      await refreshCatalogUi();
+      await populateProjects();
+      calculate();
+      return;
+    }
+    if (event.data.type !== "wix-member" || typeof event.data.sessionToken !== "string") {
+      return;
+    }
+    const nextMemberId = typeof event.data.userId === "string" ? event.data.userId.slice(0, 200) : "";
+    if (state.memberId && state.memberId !== nextMemberId) {
+      resetSetupSettings();
+      state.plan = "free";
+    }
+    state.sessionToken = event.data.sessionToken;
+    state.memberName = typeof event.data.name === "string" ? event.data.name.slice(0, 100) : "";
+    state.memberId = nextMemberId;
+    state.dataMode = "unknown";
+    setWelcomeName(state.memberName);
+    await hydratePlanBanner();
+    if (state.authenticated) {
+      await refreshCatalogUi();
+      await populateProjects();
+      if (state.plan === "pro") {
+        try {
+          await loadSetupSettings();
+        } catch (err) {
+          console.error("Could not load personalized setup.", err);
+        }
+      }
+      calculate();
+    }
+  });
+  if (window.parent && window.parent !== window) {
+    WIX_PARENT_ORIGINS.forEach((origin) => {
+      window.parent.postMessage({ type: "cutlister-ready" }, origin);
+    });
+  }
+}
 
 function newId() {
   return Math.random().toString(36).slice(2, 10);
@@ -105,19 +347,21 @@ function defaultStandards() {
 }
 
 function getStandardSelections(profile = "faceFrame") {
-  const raw = readLocalJson(LOCAL_STANDARDS_KEY, defaultStandards());
+  const raw = readLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), defaultStandards());
   const legacy = raw && raw.sheetMaterials ? { faceFrame: raw, frameless: raw } : null;
   const merged = legacy ? { ...defaultStandards(), ...legacy } : { ...defaultStandards(), ...raw };
   return { ...defaultStandardsSet(), ...(merged[profile] || {}) };
 }
 
 function saveStandardSelections(profile, standards) {
-  const current = readLocalJson(LOCAL_STANDARDS_KEY, defaultStandards());
-  writeLocalJson(LOCAL_STANDARDS_KEY, {
+  const key = localStorageKey(LOCAL_STANDARDS_KEY);
+  const current = readLocalJson(key, defaultStandards());
+  writeLocalJson(key, {
     ...defaultStandards(),
     ...current,
     [profile]: standards
   });
+  scheduleSetupSettingsSave();
 }
 
 function updateStandardSelection({ profile, type, id, category, checked }) {
@@ -200,7 +444,7 @@ function handleStandardToggle(event) {
 async function updateCatalogItem({ listKey, id, updates, apiPath }) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(apiPath, {
+      const res = await apiFetch(apiPath, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates)
@@ -606,16 +850,16 @@ function defaultBoardStocks() {
 }
 
 function localProjects() {
-  const projects = readLocalJson(LOCAL_PROJECTS_KEY, []);
+  const projects = readLocalJson(localStorageKey(LOCAL_PROJECTS_KEY), []);
   return Array.isArray(projects) ? projects : [];
 }
 
 function saveLocalProjects(projects) {
-  writeLocalJson(LOCAL_PROJECTS_KEY, projects);
+  writeLocalJson(localStorageKey(LOCAL_PROJECTS_KEY), projects);
 }
 
 function localCatalog() {
-  let catalog = normalizeCatalog(readLocalJson(LOCAL_CATALOG_KEY, {
+  let catalog = normalizeCatalog(readLocalJson(localStorageKey(LOCAL_CATALOG_KEY), {
     materials: [],
     slides: [],
     accessories: [],
@@ -640,7 +884,7 @@ function localCatalog() {
 }
 
 function saveLocalCatalog(catalog) {
-  writeLocalJson(LOCAL_CATALOG_KEY, normalizeCatalog(catalog));
+  writeLocalJson(localStorageKey(LOCAL_CATALOG_KEY), normalizeCatalog(catalog));
 }
 
 async function ensureDataMode() {
@@ -649,7 +893,7 @@ async function ensureDataMode() {
   }
 
   try {
-    const res = await fetch("/api/catalog");
+    const res = await apiFetch("/api/catalog");
     state.dataMode = res.ok ? "api" : "local";
   } catch (_err) {
     state.dataMode = "local";
@@ -945,7 +1189,7 @@ async function saveConstructionAssumption() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/construction-assumptions/${type}`, {
+      const res = await apiFetch(`/api/catalog/construction-assumptions/${type}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -1181,6 +1425,10 @@ function applyStandardMaterials() {
 }
 
 function switchTab(tabName) {
+  if (tabName !== "calculator" && state.plan !== "pro") {
+    openPaywall();
+    return;
+  }
   const isCalc = tabName === "calculator";
   const isStandards = tabName === "cabinetStandards";
   const isMaterial = tabName === "material";
@@ -1223,12 +1471,15 @@ function switchMaterialSubTab(tabName) {
 }
 
 async function fetchProjects() {
+  if (state.plan !== "pro" || !state.sessionToken) {
+    return [];
+  }
   if (await ensureDataMode() === "local") {
     return localProjects();
   }
 
   try {
-    const res = await fetch("/api/projects");
+    const res = await apiFetch("/api/projects");
     if (!res.ok) {
       throw new Error("Failed to load projects");
     }
@@ -1245,7 +1496,7 @@ async function fetchCatalog() {
   }
 
   try {
-    const res = await fetch("/api/catalog");
+    const res = await apiFetch("/api/catalog");
     if (!res.ok) {
       throw new Error("Failed to load catalog");
     }
@@ -1939,7 +2190,7 @@ async function addMaterial() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch("/api/catalog/materials", {
+      const res = await apiFetch("/api/catalog/materials", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -1982,7 +2233,7 @@ async function addSlide() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch("/api/catalog/slides", {
+      const res = await apiFetch("/api/catalog/slides", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -2023,7 +2274,7 @@ async function addAccessory() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch("/api/catalog/accessories", {
+      const res = await apiFetch("/api/catalog/accessories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -2060,7 +2311,7 @@ async function addDoorStyle() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch("/api/catalog/door-styles", {
+      const res = await apiFetch("/api/catalog/door-styles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -2098,7 +2349,7 @@ async function addPaintType() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch("/api/catalog/paint-types", {
+      const res = await apiFetch("/api/catalog/paint-types", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -2136,7 +2387,7 @@ async function addHingeType() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch("/api/catalog/hinge-types", {
+      const res = await apiFetch("/api/catalog/hinge-types", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -2173,7 +2424,7 @@ async function addBasePlateType() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch("/api/catalog/base-plate-types", {
+      const res = await apiFetch("/api/catalog/base-plate-types", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -2218,7 +2469,7 @@ async function addHardware() {
 
     if (await ensureDataMode() === "api") {
       try {
-        const res = await fetch("/api/catalog/slides", {
+        const res = await apiFetch("/api/catalog/slides", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -2246,7 +2497,7 @@ async function addHardware() {
 
     if (await ensureDataMode() === "api") {
       try {
-        const res = await fetch("/api/catalog/hinge-types", {
+        const res = await apiFetch("/api/catalog/hinge-types", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -2274,7 +2525,7 @@ async function addHardware() {
 
     if (await ensureDataMode() === "api") {
       try {
-        const res = await fetch("/api/catalog/base-plate-types", {
+        const res = await apiFetch("/api/catalog/base-plate-types", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -2319,7 +2570,7 @@ async function addBoardStock() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch("/api/catalog/board-stocks", {
+      const res = await apiFetch("/api/catalog/board-stocks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -2363,7 +2614,7 @@ async function addCrownMoulding() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch("/api/catalog/crown-mouldings", {
+      const res = await apiFetch("/api/catalog/crown-mouldings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -2392,7 +2643,7 @@ async function addCrownMoulding() {
 async function deleteMaterial(id) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/materials/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/materials/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete material");
       }
@@ -2413,7 +2664,7 @@ async function deleteMaterial(id) {
 async function deleteSlide(id) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/slides/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/slides/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete slide");
       }
@@ -2434,7 +2685,7 @@ async function deleteSlide(id) {
 async function deleteAccessory(id) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/accessories/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/accessories/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete accessory");
       }
@@ -2456,7 +2707,7 @@ async function deleteAccessory(id) {
 async function deleteDoorStyle(id) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/door-styles/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/door-styles/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete door style");
       }
@@ -2477,7 +2728,7 @@ async function deleteDoorStyle(id) {
 async function deletePaintType(id) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/paint-types/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/paint-types/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete paint type");
       }
@@ -2498,7 +2749,7 @@ async function deletePaintType(id) {
 async function deleteHingeType(id) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/hinge-types/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/hinge-types/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete hinge type");
       }
@@ -2519,7 +2770,7 @@ async function deleteHingeType(id) {
 async function deleteBasePlateType(id) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/base-plate-types/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/base-plate-types/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete base plate type");
       }
@@ -2540,7 +2791,7 @@ async function deleteBasePlateType(id) {
 async function deleteBoardStock(id) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/board-stocks/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/board-stocks/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete board stock");
       }
@@ -2566,7 +2817,7 @@ async function deleteBoardStock(id) {
 async function deleteCrownMoulding(id) {
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/catalog/crown-mouldings/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/crown-mouldings/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete crown moulding");
       }
@@ -2604,6 +2855,10 @@ function addJobAccessory() {
 }
 
 async function saveProject() {
+  if (state.plan !== "pro") {
+    openPaywall();
+    return;
+  }
   const name = byId("projectName").value.trim();
   if (!name) {
     alert("Please enter a project name before saving.");
@@ -2623,7 +2878,7 @@ async function saveProject() {
     const method = selectedId ? "PUT" : "POST";
 
     try {
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -2674,6 +2929,10 @@ async function saveProject() {
 }
 
 async function loadSelectedProject() {
+  if (state.plan !== "pro") {
+    openPaywall();
+    return;
+  }
   const id = byId("projectSelect").value;
   if (!id) {
     return;
@@ -2687,6 +2946,10 @@ async function loadSelectedProject() {
 }
 
 async function deleteSelectedProject() {
+  if (state.plan !== "pro") {
+    openPaywall();
+    return;
+  }
   const id = byId("projectSelect").value;
   if (!id) {
     return;
@@ -2699,7 +2962,7 @@ async function deleteSelectedProject() {
 
   if (await ensureDataMode() === "api") {
     try {
-      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/projects/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Could not delete project");
       }
@@ -3346,38 +3609,15 @@ function bindDrawerSetEvents() {
 
 async function hydratePlanBanner() {
   try {
-    const response = await fetch("/api/config");
+    const response = await apiFetch("/api/config");
     if (!response.ok) {
       throw new Error("Could not load plan config.");
     }
-
     const config = await response.json();
-    state.config = config;
-    state.plan = config.plan || "free";
-
-    const badge = byId("planBadge");
-    const label = byId("planLabel");
-    const link = byId("upgradeLink");
-
-    if (badge) {
-      badge.textContent = state.plan === "pro" ? "Pro plan" : "Free plan";
-    }
-
-    if (label) {
-      label.textContent = state.plan === "pro"
-        ? "You have pro access. Premium tools are enabled for this site."
-        : "Use the core calculator for free. Upgrade through Wix to unlock premium tools.";
-    }
-
-    if (link) {
-      link.href = config.upgradeUrl || "https://www.wix.com/";
-      link.textContent = state.plan === "pro" ? "Manage pro access" : "Upgrade with Wix";
-    }
-  } catch (_err) {
-    const badge = byId("planBadge");
-    if (badge) {
-      badge.textContent = "Free plan";
-    }
+    applyPlanConfig(config);
+  } catch (err) {
+    applyPlanConfig({ plan: "free", authenticated: false, upgradeUrl: "" });
+    console.error("Could not refresh subscription status.", err);
   }
 }
 
@@ -3444,6 +3684,15 @@ function bindUiEvents() {
   byId("defaultsProfileSelect").addEventListener("change", () => {
     renderDefaultsUi();
   });
+  byId("wasteFactorPercent").addEventListener("input", scheduleSetupSettingsSave);
+  ["input", "change"].forEach((eventName) => {
+    byId("laborSetupTab").addEventListener(eventName, (event) => {
+      if (event.target.matches("input")) {
+        scheduleSetupSettingsSave();
+        calculate();
+      }
+    });
+  });
 
   byId("lowerLF").addEventListener("input", () => {
     refreshAutoDrawerLineal();
@@ -3461,6 +3710,8 @@ function bindUiEvents() {
 }
 
 async function initialize() {
+  setWelcomeName(state.memberName);
+  listenForWixMember();
   renderDrawerSets([]);
   ensureDrawerSetsWhenEnabled();
   refreshAutoDrawerLineal();

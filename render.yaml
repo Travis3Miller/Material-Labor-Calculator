@@ -8,5 +8,27 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cabinet-material-calculator-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MATERIAL_LABOR_BRIDGE_SECRET
+        sync: false
+      - key: WIX_CLIENT_ID
+        sync: false
+      - key: WIX_CLIENT_SECRET
+        sync: false
+      - key: WIX_SITE_ID
+        sync: false
+      - key: WIX_PAID_PLAN_IDS
+        sync: false
       - key: WIX_UPGRADE_URL
-        value: https://www.wix.com/
+        sync: false
+
+databases:
+  - name: cabinet-material-calculator-db
+    plan: free
+    databaseName: cabinet_material_calculator
+    user: cabinet_material_calculator
