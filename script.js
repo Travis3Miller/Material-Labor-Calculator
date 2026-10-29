@@ -140,11 +140,20 @@ const WIX_PARENT_ORIGINS = Array.isArray(window.MATERIAL_LABOR_CONFIG?.wixParent
     .filter(Boolean)
   : [];
 
-function setWelcomeName(name) {
+function setWelcomeName(name, paid = state.plan === "pro") {
   const banner = byId("welcomeBanner");
   const firstName = String(name || "").trim().split(/\s+/)[0];
   if (banner) {
     banner.textContent = firstName ? `Welcome, ${firstName}` : "Welcome";
+    if (firstName) {
+      const star = document.createElement("span");
+      star.className = paid ? "member-star paid" : "member-star";
+      star.textContent = " \u2605";
+      const label = paid ? "Paid plan active" : "Paid plan not active";
+      star.title = label;
+      star.setAttribute("aria-label", label);
+      banner.appendChild(star);
+    }
   }
 }
 
@@ -190,6 +199,7 @@ function applyPlanConfig(config) {
   state.config = config;
   state.plan = config.plan === "pro" ? "pro" : "free";
   state.authenticated = config.authenticated === true;
+  setWelcomeName(state.memberName, state.plan === "pro");
   if (previousPlan === "pro" && state.plan !== "pro") {
     resetSetupSettings();
   }
