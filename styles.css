@@ -144,6 +144,17 @@ h1 {
   font-weight: 700;
 }
 
+.member-star {
+  color: #000;
+}
+
+.member-star.paid {
+  background: linear-gradient(135deg, #8a4b2a 0%, #e0956a 35%, #b87333 55%, #f0b48a 75%, #8a4b2a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 .locked-tab {
   opacity: 0.78;
 }
