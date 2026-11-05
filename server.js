@@ -77,6 +77,17 @@ function trustedWixBridge(req) {
   return Boolean(secret && safeCompare(req.get("x-wix-bridge-secret"), secret));
 }
 
+function adminMemberIds() {
+  return new Set(String(process.env.ADMIN_MEMBER_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean));
+}
+
+function isAdmin(req) {
+  return Boolean(req.currentUser && adminMemberIds().has(req.currentUser.sub));
+}
+
 function paidPlanIds() {
   return new Set(String(process.env.WIX_PAID_PLAN_IDS || "")
     .split(",")
@@ -216,6 +227,7 @@ app.get("/api/config", async (req, res) => {
     name: req.currentUser ? req.currentUser.name : "",
     plan: isPro ? "pro" : "free",
     upgradeUrl: process.env.WIX_UPGRADE_URL || "",
+    ...(isAdmin(req) ? { admin: true } : {}),
     freeFeatures: FREE_FEATURES,
     proFeatures: PAID_FEATURES,
     appName: "Cabinet Material Calculator"
@@ -288,6 +300,15 @@ app.use("/api/projects", (req, res, next) => {
 });
 
 app.use("/api/catalog", (req, res, next) => {
+  if (req.query.scope === "shared") {
+    if (!isAdmin(req)) {
+      res.status(403).json({ error: "Admin access required." });
+      return;
+    }
+    req.useSharedScope = true;
+    next();
+    return;
+  }
   if (req.method === "GET") {
     next();
     return;
@@ -347,7 +368,7 @@ app.put("/api/settings", async (req, res) => {
 
 async function readStore(req) {
   await databaseReady;
-  const userId = req && req.currentUser && req.currentUser.sub;
+  const userId = req && !req.useSharedScope && req.currentUser && req.currentUser.sub;
   if (database) {
     const scopeId = userId || PUBLIC_SCOPE;
     const result = await database.query(
@@ -387,7 +408,8 @@ async function readStore(req) {
 }
 
 async function writeStore(req, store) {
-  const userId = req && req.currentUser && req.currentUser.sub;
+  const shared = Boolean(req && req.useSharedScope);
+  const userId = shared ? PUBLIC_SCOPE : req && req.currentUser && req.currentUser.sub;
   if (!userId) {
     throw new Error("Authenticated user required to save app data.");
   }
@@ -398,13 +420,22 @@ async function writeStore(req, store) {
        VALUES ($1, $2::jsonb, NOW())
        ON CONFLICT (scope_id) DO UPDATE
        SET store = EXCLUDED.store, updated_at = NOW()`,
-      [userId, JSON.stringify(normalizeStore(store))]
+      [userId, JSON.stringify(normalizeStore(shared ? { ...store, projects: [] } : store))]
     );
     return;
   }
   await ensureStoreFile();
   const stored = JSON.parse(await fs.readFile(DATA_FILE, "utf8"));
   const globalStore = normalizeStore(stored.global || stored);
+  if (shared) {
+    const sharedUsers = stored.users && typeof stored.users === "object" ? stored.users : Object.create(null);
+    await fs.writeFile(
+      DATA_FILE,
+      JSON.stringify({ global: normalizeStore({ ...store, projects: [] }), users: sharedUsers }, null, 2),
+      "utf8"
+    );
+    return;
+  }
   const users = stored.users && typeof stored.users === "object" ? stored.users : Object.create(null);
   const userKey = `member:${Buffer.from(userId).toString("base64url")}`;
   users[userKey] = normalizeStore(store);
@@ -585,7 +616,7 @@ app.put("/api/catalog/construction-assumptions/:type", async (req, res) => {
     const store = await readStore(req);
     store.constructionAssumptionCatalog = store.constructionAssumptionCatalog.filter((item) => item.type !== type);
     store.constructionAssumptionCatalog.push(assumption);
-    await writeStore(normalizeStore(store));
+    await writeStore(req, normalizeStore(store));
     res.json(assumption);
   } catch (err) {
     res.status(500).json({ error: "Could not save construction assumption." });

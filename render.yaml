@@ -26,6 +26,8 @@ services:
         sync: false
       - key: WIX_UPGRADE_URL
         sync: false
+      - key: ADMIN_MEMBER_IDS
+        sync: false
 
 databases:
   - name: cabinet-material-calculator-db

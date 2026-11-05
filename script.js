@@ -46,10 +46,15 @@ const state = {
   memberId: "",
   sessionToken: "",
   authenticated: false,
+  admin: false,
+  editShared: false,
   restoringSettings: false
 };
 
 function apiFetch(path, options = {}) {
+  if (state.admin && state.editShared && path.startsWith("/api/catalog")) {
+    path += (path.includes("?") ? "&" : "?") + "scope=shared";
+  }
   const headers = new Headers(options.headers || {});
   if (state.sessionToken) {
     headers.set("Authorization", "Bearer " + state.sessionToken);
@@ -175,6 +180,33 @@ function resetSetupSettings() {
   renderDefaultsUi();
 }
 
+function syncSharedDefaultsToggle() {
+  const existing = byId("sharedDefaultsToggle");
+  if (!state.admin) {
+    existing?.remove();
+    return;
+  }
+  if (existing) {
+    return;
+  }
+  const heading = document.querySelector("#materialSetupTab h2");
+  if (!heading) {
+    return;
+  }
+  const label = document.createElement("label");
+  label.id = "sharedDefaultsToggle";
+  label.className = "shared-defaults-toggle";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = state.editShared;
+  checkbox.addEventListener("change", async () => {
+    state.editShared = state.admin && checkbox.checked;
+    await refreshCatalogUi();
+  });
+  label.append(checkbox, " Editing shared defaults (the list every member starts with)");
+  heading.after(label);
+}
+
 function openPaywall() {
   const dialog = byId("paywallDialog");
   const upgradeLink = byId("paywallUpgradeLink");
@@ -199,6 +231,11 @@ function applyPlanConfig(config) {
   state.config = config;
   state.plan = config.plan === "pro" ? "pro" : "free";
   state.authenticated = config.authenticated === true;
+  state.admin = config.admin === true;
+  if (!state.admin) {
+    state.editShared = false;
+  }
+  syncSharedDefaultsToggle();
   setWelcomeName(state.memberName, state.plan === "pro");
   if (previousPlan === "pro" && state.plan !== "pro") {
     resetSetupSettings();
