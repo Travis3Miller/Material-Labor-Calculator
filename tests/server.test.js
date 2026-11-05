@@ -57,6 +57,78 @@ after(async () => {
 });
 
 test("client-supplied plan flags never grant paid access", async () => {
+  const catalog = await (await fetch(`${baseUrl}/api/catalog`)).json();
+  assert.deepEqual(catalog.materials.map(({ category, name, thickness, length, width, costPerSheet, wasteFactorPercent }) => ({
+    category, name, thickness, length, width, costPerSheet, wasteFactorPercent
+  })), [
+    { category: "carcass", name: "3/4 Maple Melamine", thickness: 0.75, length: 96, width: 48, costPerSheet: 50, wasteFactorPercent: 15 },
+    { category: "back", name: "1/4 Maple Melamine", thickness: 0.25, length: 96, width: 48, costPerSheet: 20, wasteFactorPercent: 15 },
+    { category: "drawerBox", name: "1/2 Baltic Birch Ply", thickness: 0.5, length: 96, width: 48, costPerSheet: 85, wasteFactorPercent: 15 },
+    { category: "drawerBottom", name: "1/4 Prefinished Maple Ply", thickness: 0.25, length: 96, width: 48, costPerSheet: 27, wasteFactorPercent: 15 },
+    { category: "finishedEnd", name: "3/4 1s Melamine 1s PG", thickness: 0.75, length: 96, width: 48, costPerSheet: 55, wasteFactorPercent: 15 },
+    { category: "nailer", name: "1/2 Particle Board", thickness: 0.5, length: 96, width: 48, costPerSheet: 24, wasteFactorPercent: 15 },
+    { category: "toeKick", name: "3/4 TOE PLY", thickness: 0.75, length: 96, width: 48, costPerSheet: 30, wasteFactorPercent: 15 }
+  ]);
+  assert.ok(catalog.materials.every((item) => item.wasteMultiplier === 1.15));
+  assert.deepEqual(catalog.boardStocks[0], {
+    id: "default-poplar-s2s",
+    name: "4/4 Poplar S2S",
+    costPerBdFt: 2.75,
+    wasteFactorPercent: 0,
+    wasteMultiplier: 1,
+    usedFor: "Face Frames, Fillers"
+  });
+  assert.deepEqual(catalog.slides[0], {
+    id: "default-blum-tandem-21",
+    name: "21\" Blum Tandem Slides",
+    costPerPair: 30,
+    wasteFactorPercent: 0,
+    wasteMultiplier: 1
+  });
+  assert.deepEqual(catalog.doorStyles[0], { id: "default-pg-shaker-door", name: "PG Shaker Door", costPerSqFt: 12 });
+  assert.deepEqual(catalog.paintTypes[0], {
+    id: "default-sw-proclassic",
+    name: "Sherwin Williams ProClassic Paint",
+    primerCostPerGallon: 90,
+    topcoatCostPerGallon: 90
+  });
+  assert.deepEqual(catalog.hingeTypes[0], {
+    id: "default-blum-110-soft-close",
+    name: "Blum 110 Soft Close",
+    costEach: 4,
+    wasteFactorPercent: 0,
+    wasteMultiplier: 1
+  });
+  assert.deepEqual(catalog.basePlateTypes, [
+    {
+      id: "default-blum-cast-face-frame-plate",
+      name: "Blum Cast Face Frame Plate",
+      costEach: 0.8,
+      wasteFactorPercent: 0,
+      wasteMultiplier: 1
+    },
+    {
+      id: "default-frameless-blum-cam-adj-base-plate",
+      name: "Frameless Blum Cam Adj Base Plates",
+      costEach: 0.8,
+      wasteFactorPercent: 0,
+      wasteMultiplier: 1
+    }
+  ]);
+  assert.deepEqual(catalog.crownMouldings[0], {
+    id: "default-pg-traditional-crown",
+    name: "3-1/2 Inch Traditional Crown, PG",
+    costPerLf: 3,
+    wasteFactorPercent: 15,
+    wasteMultiplier: 1.15,
+    usedFor: "Crown Moulding"
+  });
+  assert.deepEqual(catalog.edgeBandings[0], {
+    id: "default-alder-edgeband-13-16",
+    name: "13/16 Alder Edgeband Roll",
+    lengthPerRoll: 320,
+    costPerRoll: 60
+  });
   const response = await fetch(`${baseUrl}/api/config?plan=pro`, {
     headers: { "x-plan": "pro", "x-plan-type": "pro" }
   });
@@ -150,11 +222,16 @@ test("project and catalog writes require paid entitlement on the server", async 
   const paidCatalog = await fetch(`${baseUrl}/api/catalog`, {
     headers: { Authorization: `Bearer ${paidSession}` }
   });
-  assert.equal((await paidCatalog.json()).materials.length, 1);
+  const paidMaterials = (await paidCatalog.json()).materials;
+  assert.equal(paidMaterials.length, 8);
+  assert.ok(paidMaterials.some((item) => item.name === "1/2 Baltic Birch Ply"));
+  assert.ok(paidMaterials.some((item) => item.name === "Member-only plywood"));
   const otherMemberCatalog = await fetch(`${baseUrl}/api/catalog`, {
     headers: { Authorization: `Bearer ${memberSession}` }
   });
-  assert.equal((await otherMemberCatalog.json()).materials.length, 0);
+  const otherMemberMaterials = (await otherMemberCatalog.json()).materials;
+  assert.equal(otherMemberMaterials.length, 7);
+  assert.ok(!otherMemberMaterials.some((item) => item.name === "Member-only plywood"));
 
   const paidSettings = await fetch(`${baseUrl}/api/settings`, {
     method: "PUT",
@@ -162,9 +239,22 @@ test("project and catalog writes require paid entitlement on the server", async 
       "Content-Type": "application/json",
       Authorization: `Bearer ${paidSession}`
     },
-    body: JSON.stringify({ shopCostPerHour: 90 })
+    body: JSON.stringify({
+      shopCostPerHour: 90,
+      standards: {
+        standardsVersion: 2,
+        profileNames: {
+          faceFrame: "Custom Paint Grade Face Frame",
+          frameless: "Custom Paint Grade Frameless"
+        }
+      }
+    })
   });
   assert.equal(paidSettings.status, 200);
+  const savedSettings = await (await fetch(`${baseUrl}/api/settings`, {
+    headers: { Authorization: "Bearer " + paidSession }
+  })).json();
+  assert.equal(savedSettings.standards.profileNames.frameless, "Custom Paint Grade Frameless");
   const otherMemberSettings = await fetch(`${baseUrl}/api/settings`, {
     headers: { Authorization: `Bearer ${memberSession}` }
   });
@@ -204,6 +294,38 @@ test("only admins can edit the shared default catalog everyone else reads", asyn
     body: JSON.stringify({ category: "carcass", name: "Shared default plywood" })
   });
   assert.equal(created.status, 201);
+
+  const invalidEdgeBanding = await fetch(`${baseUrl}/api/catalog/edge-bandings?scope=shared`, {
+    method: "POST",
+    headers: bearer(adminToken),
+    body: JSON.stringify({ name: "Invalid roll", lengthPerRoll: 0, costPerRoll: 60 })
+  });
+  assert.equal(invalidEdgeBanding.status, 400);
+
+  const edgeBandingResponse = await fetch(`${baseUrl}/api/catalog/edge-bandings?scope=shared`, {
+    method: "POST",
+    headers: bearer(adminToken),
+    body: JSON.stringify({ name: "Test Alder Roll", lengthPerRoll: 320, costPerRoll: 60 })
+  });
+  assert.equal(edgeBandingResponse.status, 201);
+  const edgeBanding = await edgeBandingResponse.json();
+  const updatedEdgeBanding = await fetch(`${baseUrl}/api/catalog/edge-bandings/${edgeBanding.id}?scope=shared`, {
+    method: "PUT",
+    headers: bearer(adminToken),
+    body: JSON.stringify({ name: "Updated Alder Roll", lengthPerRoll: 300, costPerRoll: 66 })
+  });
+  assert.equal(updatedEdgeBanding.status, 200);
+  assert.deepEqual(await updatedEdgeBanding.json(), {
+    ...edgeBanding,
+    name: "Updated Alder Roll",
+    lengthPerRoll: 300,
+    costPerRoll: 66
+  });
+  const deletedEdgeBanding = await fetch(`${baseUrl}/api/catalog/edge-bandings/${edgeBanding.id}?scope=shared`, {
+    method: "DELETE",
+    headers: bearer(adminToken)
+  });
+  assert.equal(deletedEdgeBanding.status, 204);
 
   const anonymous = await (await fetch(`${baseUrl}/api/catalog`)).json();
   assert.ok(anonymous.materials.some((item) => item.name === "Shared default plywood"));

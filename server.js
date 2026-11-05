@@ -455,9 +455,39 @@ async function writeStore(req, store) {
 }
 
 function normalizeStore(store) {
+  const defaultMaterials = [
+    { id: "default-maple-melamine-carcass", category: "carcass", name: "3/4 Maple Melamine", thickness: 0.75, length: 96, width: 48, costPerSheet: 50, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-maple-melamine-back", category: "back", name: "1/4 Maple Melamine", thickness: 0.25, length: 96, width: 48, costPerSheet: 20, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-baltic-birch-drawer-box", category: "drawerBox", name: "1/2 Baltic Birch Ply", thickness: 0.5, length: 96, width: 48, costPerSheet: 85, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-prefinished-maple-drawer-bottom", category: "drawerBottom", name: "1/4 Prefinished Maple Ply", thickness: 0.25, length: 96, width: 48, costPerSheet: 27, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-melamine-finished-end", category: "finishedEnd", name: "3/4 1s Melamine 1s PG", thickness: 0.75, length: 96, width: 48, costPerSheet: 55, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-particle-board-nailer", category: "nailer", name: "1/2 Particle Board", thickness: 0.5, length: 96, width: 48, costPerSheet: 24, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-toe-ply", category: "toeKick", name: "3/4 TOE PLY", thickness: 0.75, length: 96, width: 48, costPerSheet: 30, wasteFactorPercent: 15, wasteMultiplier: 1.15 }
+  ];
   const defaultBoardStock = [
-    { id: "default-alder", name: "Alder", costPerBdFt: 4.5, wasteFactorPercent: 0, wasteMultiplier: 1, usedFor: "Face Frames" },
-    { id: "default-poplar", name: "Poplar", costPerBdFt: 3.5, wasteFactorPercent: 0, wasteMultiplier: 1, usedFor: "Face Frames" }
+    { id: "default-poplar-s2s", name: "4/4 Poplar S2S", costPerBdFt: 2.75, wasteFactorPercent: 0, wasteMultiplier: 1, usedFor: "Face Frames, Fillers" }
+  ];
+  const defaultSlides = [
+    { id: "default-blum-tandem-21", name: "21\" Blum Tandem Slides", costPerPair: 30, wasteFactorPercent: 0, wasteMultiplier: 1 }
+  ];
+  const defaultDoorStyles = [
+    { id: "default-pg-shaker-door", name: "PG Shaker Door", costPerSqFt: 12 }
+  ];
+  const defaultPaintTypes = [
+    { id: "default-sw-proclassic", name: "Sherwin Williams ProClassic Paint", primerCostPerGallon: 90, topcoatCostPerGallon: 90 }
+  ];
+  const defaultHingeTypes = [
+    { id: "default-blum-110-soft-close", name: "Blum 110 Soft Close", costEach: 4, wasteFactorPercent: 0, wasteMultiplier: 1 }
+  ];
+  const defaultBasePlateTypes = [
+    { id: "default-blum-cast-face-frame-plate", name: "Blum Cast Face Frame Plate", costEach: 0.8, wasteFactorPercent: 0, wasteMultiplier: 1 },
+    { id: "default-frameless-blum-cam-adj-base-plate", name: "Frameless Blum Cam Adj Base Plates", costEach: 0.8, wasteFactorPercent: 0, wasteMultiplier: 1 }
+  ];
+  const defaultCrownMouldings = [
+    { id: "default-pg-traditional-crown", name: "3-1/2 Inch Traditional Crown, PG", costPerLf: 3, wasteFactorPercent: 15, wasteMultiplier: 1.15, usedFor: "Crown Moulding" }
+  ];
+  const defaultEdgeBandings = [
+    { id: "default-alder-edgeband-13-16", name: "13/16 Alder Edgeband Roll", lengthPerRoll: 320, costPerRoll: 60 }
   ];
   const defaultConstructionAssumptions = [
     {
@@ -471,7 +501,11 @@ function normalizeStore(store) {
       upperDepth: 12,
       tallHeight: 90,
       tallDepth: 24,
-      avgWidth: 18
+      avgWidth: 18,
+      fillerWidth: 2,
+      lfPerFiller: 3,
+      fillerHeightMode: "average",
+      fillerHeight: 30
     },
     {
       type: "frameless",
@@ -484,30 +518,62 @@ function normalizeStore(store) {
       upperDepth: 12,
       tallHeight: 90,
       tallDepth: 24,
-      avgWidth: 18
+      avgWidth: 18,
+      fillerWidth: 2,
+      lfPerFiller: 3,
+      fillerHeightMode: "average",
+      fillerHeight: 30
     }
   ];
 
-  const boardStockCatalog = Array.isArray(store.boardStockCatalog) ? store.boardStockCatalog : [];
+  const defaultsVersion = Number(store.catalogDefaultsVersion) || 0;
+  const mergeDefaults = (items, defaults) => {
+    const existing = Array.isArray(items) ? items : [];
+    const existingIds = new Set(existing.map((item) => item.id));
+    return [...existing, ...defaults.filter((item) => !existingIds.has(item.id))];
+  };
+  const migratedMaterials = defaultsVersion < 1
+    ? defaultMaterials
+    : defaultsVersion < 2
+      ? defaultMaterials.filter((item) => ["default-melamine-finished-end", "default-particle-board-nailer"].includes(item.id))
+      : defaultsVersion < 3
+        ? defaultMaterials.filter((item) => item.id === "default-toe-ply")
+        : [];
+  const existingBoardStocks = Array.isArray(store.boardStockCatalog) ? store.boardStockCatalog : [];
+  const migratedBoardStocks = existingBoardStocks.filter((item) => !(
+    (item.id === "default-alder" && item.name === "Alder" && item.costPerBdFt === 4.5)
+    || (item.id === "default-poplar" && item.name === "Poplar" && item.costPerBdFt === 3.5)
+  ));
+  const materialCatalog = mergeDefaults(store.materialCatalog, migratedMaterials);
+  const slideCatalog = mergeDefaults(store.slideCatalog, defaultsVersion < 1 ? defaultSlides : []);
+  const doorStyleCatalog = mergeDefaults(store.doorStyleCatalog, defaultsVersion < 1 ? defaultDoorStyles : []);
+  const paintTypeCatalog = mergeDefaults(store.paintTypeCatalog, defaultsVersion < 1 ? defaultPaintTypes : []);
+  const boardStockCatalog = mergeDefaults(migratedBoardStocks, defaultsVersion < 1 ? defaultBoardStock : []);
+  const hingeTypeCatalog = mergeDefaults(store.hingeTypeCatalog, defaultsVersion < 2 ? defaultHingeTypes : []);
+  const basePlateTypeCatalog = mergeDefaults(store.basePlateTypeCatalog, defaultsVersion < 2 ? defaultBasePlateTypes : []);
+  const crownMouldingCatalog = mergeDefaults(store.crownMouldingCatalog, defaultsVersion < 1 ? defaultCrownMouldings : []);
+  const edgeBandingCatalog = mergeDefaults(store.edgeBandingCatalog, defaultsVersion < 4 ? defaultEdgeBandings : []);
   const constructionAssumptionCatalog = Array.isArray(store.constructionAssumptionCatalog) ? store.constructionAssumptionCatalog : [];
   const mergedConstructionAssumptions = defaultConstructionAssumptions.map((item) => {
     return constructionAssumptionCatalog.find((x) => x.type === item.type) || item;
   });
 
   return {
+    catalogDefaultsVersion: 4,
     projects: Array.isArray(store.projects) ? store.projects : [],
     settings: store.settings && typeof store.settings === "object" && !Array.isArray(store.settings)
       ? store.settings
       : {},
-    materialCatalog: Array.isArray(store.materialCatalog) ? store.materialCatalog : [],
-    slideCatalog: Array.isArray(store.slideCatalog) ? store.slideCatalog : [],
+    materialCatalog,
+    slideCatalog,
     accessoryCatalog: Array.isArray(store.accessoryCatalog) ? store.accessoryCatalog : [],
-    doorStyleCatalog: Array.isArray(store.doorStyleCatalog) ? store.doorStyleCatalog : [],
-    paintTypeCatalog: Array.isArray(store.paintTypeCatalog) ? store.paintTypeCatalog : [],
-    hingeTypeCatalog: Array.isArray(store.hingeTypeCatalog) ? store.hingeTypeCatalog : [],
-    basePlateTypeCatalog: Array.isArray(store.basePlateTypeCatalog) ? store.basePlateTypeCatalog : [],
-    boardStockCatalog: boardStockCatalog.length ? boardStockCatalog : defaultBoardStock,
-    crownMouldingCatalog: Array.isArray(store.crownMouldingCatalog) ? store.crownMouldingCatalog : [],
+    doorStyleCatalog,
+    paintTypeCatalog,
+    hingeTypeCatalog,
+    basePlateTypeCatalog,
+    boardStockCatalog,
+    crownMouldingCatalog,
+    edgeBandingCatalog,
     constructionAssumptionCatalog: mergedConstructionAssumptions
   };
 }
@@ -596,6 +662,7 @@ app.get("/api/catalog", async (req, res) => {
       basePlateTypes: store.basePlateTypeCatalog,
       boardStocks: store.boardStockCatalog,
       crownMouldings: store.crownMouldingCatalog,
+      edgeBandings: store.edgeBandingCatalog,
       constructionAssumptions: store.constructionAssumptionCatalog
     });
   } catch (err) {
@@ -622,7 +689,13 @@ app.put("/api/catalog/construction-assumptions/:type", async (req, res) => {
       upperDepth: Number(body.upperDepth) || 0,
       tallHeight: Number(body.tallHeight) || 0,
       tallDepth: Number(body.tallDepth) || 0,
-      avgWidth: Number(body.avgWidth) || 18
+      avgWidth: Number(body.avgWidth) || 18,
+      toeKickHeight: Number(body.toeKickHeight) || 4,
+      nailerRipSize: Number(body.nailerRipSize) || 3,
+      fillerWidth: Number(body.fillerWidth) || 2,
+      lfPerFiller: Number(body.lfPerFiller) || 3,
+      fillerHeightMode: body.fillerHeightMode === "specified" ? "specified" : "average",
+      fillerHeight: Number(body.fillerHeight) || 30
     };
 
     const store = await readStore(req);
@@ -1251,6 +1324,74 @@ app.delete("/api/catalog/crown-mouldings/:id", async (req, res) => {
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete crown moulding." });
+  }
+});
+
+app.post("/api/catalog/edge-bandings", async (req, res) => {
+  try {
+    const { name, lengthPerRoll, costPerRoll } = req.body || {};
+    const rollLength = Number(lengthPerRoll);
+    const rollCost = Number(costPerRoll);
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "Edgebanding name is required." });
+    }
+    if (!Number.isFinite(rollLength) || rollLength <= 0 || !Number.isFinite(rollCost) || rollCost < 0) {
+      return res.status(400).json({ error: "Enter a valid roll length and cost." });
+    }
+
+    const store = await readStore(req);
+    const item = {
+      id: newId(),
+      name: name.trim(),
+      lengthPerRoll: rollLength,
+      costPerRoll: rollCost
+    };
+    store.edgeBandingCatalog.push(item);
+    await writeStore(req, store);
+    res.status(201).json(item);
+  } catch (err) {
+    res.status(500).json({ error: "Could not save edgebanding." });
+  }
+});
+
+app.put("/api/catalog/edge-bandings/:id", async (req, res) => {
+  try {
+    const { name, lengthPerRoll, costPerRoll } = req.body || {};
+    const rollLength = Number(lengthPerRoll);
+    const rollCost = Number(costPerRoll);
+    const store = await readStore(req);
+    const idx = store.edgeBandingCatalog.findIndex((item) => item.id === req.params.id);
+    if (idx < 0) {
+      return res.status(404).json({ error: "Edgebanding not found." });
+    }
+    if (typeof name !== "string" || !name.trim() || !Number.isFinite(rollLength) || rollLength <= 0 || !Number.isFinite(rollCost) || rollCost < 0) {
+      return res.status(400).json({ error: "Enter a valid name, roll length, and cost." });
+    }
+    store.edgeBandingCatalog[idx] = {
+      ...store.edgeBandingCatalog[idx],
+      name: name.trim(),
+      lengthPerRoll: rollLength,
+      costPerRoll: rollCost
+    };
+    await writeStore(req, store);
+    res.json(store.edgeBandingCatalog[idx]);
+  } catch (err) {
+    res.status(500).json({ error: "Could not update edgebanding." });
+  }
+});
+
+app.delete("/api/catalog/edge-bandings/:id", async (req, res) => {
+  try {
+    const store = await readStore(req);
+    const before = store.edgeBandingCatalog.length;
+    store.edgeBandingCatalog = store.edgeBandingCatalog.filter((item) => item.id !== req.params.id);
+    if (store.edgeBandingCatalog.length === before) {
+      return res.status(404).json({ error: "Edgebanding not found." });
+    }
+    await writeStore(req, store);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: "Could not delete edgebanding." });
   }
 });
 

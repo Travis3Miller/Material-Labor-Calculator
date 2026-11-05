@@ -6,6 +6,7 @@ Node.js + Express material and labor calculator with Wix member sign-in, paid fe
 
 - Free: core calculations and print/export.
 - Paid: saved projects, cabinetry standards, materials, and labor setup.
+- New jobs start with the "Default Paint Grade Frameless" standard. Paid members can customize and rename their personal Face Frame and Frameless defaults.
 - The server verifies active Wix Pricing Plan orders against `WIX_PAID_PLAN_IDS` for every protected write. A plan value sent by browser code is never treated as proof of payment.
 
 ## Render configuration

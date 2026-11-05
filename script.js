@@ -36,7 +36,8 @@ const state = {
     hingeTypes: [],
     basePlateTypes: [],
     boardStocks: [],
-    crownMouldings: []
+    crownMouldings: [],
+    edgeBandings: []
   },
   jobAccessories: [],
   dataMode: "unknown",
@@ -390,32 +391,111 @@ function writeLocalJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function defaultStandardsSet() {
+function defaultStandardsSet(profile = "faceFrame") {
   return {
-    sheetMaterials: {},
-    crownMouldingId: "",
-    boardStockId: "",
-    drawerSlideId: "",
-    hingeTypeId: "",
-    basePlateTypeId: "",
-    doorStyleId: "",
-    paintTypeId: "",
+    sheetMaterials: {
+      carcass: "default-maple-melamine-carcass",
+      back: "default-maple-melamine-back",
+      finishedEnd: "default-melamine-finished-end",
+      toeKick: "default-toe-ply",
+      nailer: "default-particle-board-nailer",
+      drawerBox: "default-baltic-birch-drawer-box",
+      drawerBottom: "default-prefinished-maple-drawer-bottom"
+    },
+    crownMouldingId: "default-pg-traditional-crown",
+    boardStockId: "default-poplar-s2s",
+    drawerSlideId: "default-blum-tandem-21",
+    edgeBandingId: profile === "frameless" ? "default-alder-edgeband-13-16" : "",
+    hingeTypeId: "default-blum-110-soft-close",
+    basePlateTypeId: profile === "faceFrame"
+      ? "default-blum-cast-face-frame-plate"
+      : "default-frameless-blum-cam-adj-base-plate",
+    doorStyleId: "default-pg-shaker-door",
+    paintTypeId: "default-sw-proclassic",
     accessoryIds: []
   };
 }
 
 function defaultStandards() {
   return {
-    faceFrame: defaultStandardsSet(),
-    frameless: defaultStandardsSet()
+    standardsVersion: 4,
+    profileNames: {
+      faceFrame: "Default Paint Grade Face Frame",
+      frameless: "Default Paint Grade Frameless"
+    },
+    faceFrame: defaultStandardsSet("faceFrame"),
+    frameless: defaultStandardsSet("frameless")
   };
 }
 
-function getStandardSelections(profile = "faceFrame") {
+function getStandardProfileNames() {
+  const raw = readLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), defaultStandards());
+  return {
+    ...defaultStandards().profileNames,
+    ...(raw && raw.profileNames && typeof raw.profileNames === "object" ? raw.profileNames : {})
+  };
+}
+
+function renameStandardProfile(profile) {
+  if (state.plan !== "pro") {
+    openPaywall();
+    return;
+  }
+  const names = getStandardProfileNames();
+  const name = prompt("Default profile name", names[profile]);
+  if (name === null) {
+    return;
+  }
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    alert("Enter a default profile name.");
+    return;
+  }
+  const current = readLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), defaultStandards());
+  writeLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), {
+    ...defaultStandards(),
+    ...current,
+    profileNames: { ...names, [profile]: trimmedName }
+  });
+  scheduleSetupSettingsSave();
+  renderDefaultsUi();
+}
+
+function getStandardSelections(profile = "frameless") {
   const raw = readLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), defaultStandards());
   const legacy = raw && raw.sheetMaterials ? { faceFrame: raw, frameless: raw } : null;
   const merged = legacy ? { ...defaultStandards(), ...legacy } : { ...defaultStandards(), ...raw };
-  return { ...defaultStandardsSet(), ...(merged[profile] || {}) };
+  const defaults = defaultStandardsSet(profile);
+  const saved = merged[profile] || {};
+  const savedSelections = { ...saved };
+  const savedSheetMaterials = { ...(saved.sheetMaterials || {}) };
+  const standardsVersion = Number(raw.standardsVersion) || 0;
+  if (standardsVersion < 2) {
+    Object.entries(defaults).forEach(([key, value]) => {
+      if (key !== "sheetMaterials" && typeof value === "string" && !savedSelections[key]) {
+        savedSelections[key] = value;
+      }
+    });
+    Object.entries(defaults.sheetMaterials).forEach(([category, id]) => {
+      if (!savedSheetMaterials[category]) {
+        savedSheetMaterials[category] = id;
+      }
+    });
+  } else if (standardsVersion < 3) {
+    if (!Object.hasOwn(savedSheetMaterials, "toeKick")) {
+      savedSheetMaterials.toeKick = defaults.sheetMaterials.toeKick;
+    }
+    if (!savedSelections.edgeBandingId && profile === "frameless") {
+      savedSelections.edgeBandingId = defaults.edgeBandingId;
+    }
+  } else if (standardsVersion < 4 && !savedSelections.edgeBandingId && profile === "frameless") {
+    savedSelections.edgeBandingId = defaults.edgeBandingId;
+  }
+  return {
+    ...defaults,
+    ...savedSelections,
+    sheetMaterials: { ...defaults.sheetMaterials, ...savedSheetMaterials }
+  };
 }
 
 function saveStandardSelections(profile, standards) {
@@ -436,12 +516,16 @@ function updateStandardSelection({ profile, type, id, category, checked }) {
     if (checked) {
       standards.sheetMaterials[category] = id;
     } else if (standards.sheetMaterials[category] === id) {
-      delete standards.sheetMaterials[category];
+      standards.sheetMaterials[category] = "";
     }
   }
 
   if (type === "crown") {
     standards.crownMouldingId = checked ? id : "";
+  }
+
+  if (type === "edgeBanding") {
+    standards.edgeBandingId = checked ? id : "";
   }
 
   if (type === "boardStock") {
@@ -634,6 +718,37 @@ async function editCrownMoulding(id) {
       wasteMultiplier: 1 + (wasteFactor / 100),
       usedFor: usedForRaw.trim() || "Crown Moulding"
     }
+  });
+}
+
+async function editEdgeBanding(id) {
+  const item = state.catalog.edgeBandings.find((entry) => entry.id === id);
+  if (!item) {
+    return;
+  }
+  const name = prompt("Edgebanding name", item.name);
+  if (name === null) {
+    return;
+  }
+  const lengthRaw = prompt("Lineal feet per roll", String(item.lengthPerRoll));
+  if (lengthRaw === null) {
+    return;
+  }
+  const costRaw = prompt("Cost per roll", String(item.costPerRoll));
+  if (costRaw === null) {
+    return;
+  }
+  const lengthPerRoll = toNumber(lengthRaw);
+  const costPerRoll = toNumber(costRaw);
+  if (!name.trim() || lengthPerRoll <= 0 || costPerRoll < 0) {
+    alert("Enter a name, a roll length greater than zero, and a valid cost.");
+    return;
+  }
+  await updateCatalogItem({
+    listKey: "edgeBandings",
+    id,
+    apiPath: `/api/catalog/edge-bandings/${id}`,
+    updates: { name: name.trim(), lengthPerRoll, costPerRoll }
   });
 }
 
@@ -846,6 +961,7 @@ async function editBoardStock(id) {
 
 function normalizeCatalog(catalog) {
   return {
+    catalogDefaultsVersion: Number(catalog.catalogDefaultsVersion) || 0,
     materials: Array.isArray(catalog.materials) ? catalog.materials : [],
     slides: Array.isArray(catalog.slides) ? catalog.slides : [],
     accessories: Array.isArray(catalog.accessories) ? catalog.accessories : [],
@@ -855,6 +971,7 @@ function normalizeCatalog(catalog) {
     basePlateTypes: Array.isArray(catalog.basePlateTypes) ? catalog.basePlateTypes : [],
     boardStocks: Array.isArray(catalog.boardStocks) ? catalog.boardStocks : [],
     crownMouldings: Array.isArray(catalog.crownMouldings) ? catalog.crownMouldings : [],
+    edgeBandings: Array.isArray(catalog.edgeBandings) ? catalog.edgeBandings : [],
     constructionAssumptions: Array.isArray(catalog.constructionAssumptions) ? catalog.constructionAssumptions : []
   };
 }
@@ -874,7 +991,11 @@ function defaultConstructionAssumptions() {
       tallDepth: 24,
       avgWidth: 18,
       toeKickHeight: 4,
-      nailerRipSize: 3
+      nailerRipSize: 3,
+      fillerWidth: 2,
+      lfPerFiller: 3,
+      fillerHeightMode: "average",
+      fillerHeight: 30
     },
     {
       type: "frameless",
@@ -889,7 +1010,11 @@ function defaultConstructionAssumptions() {
       tallDepth: 24,
       avgWidth: 18,
       toeKickHeight: 4,
-      nailerRipSize: 3
+      nailerRipSize: 3,
+      fillerWidth: 2,
+      lfPerFiller: 3,
+      fillerHeightMode: "average",
+      fillerHeight: 30
     }
   ];
 }
@@ -909,9 +1034,49 @@ function withDefaultConstructionAssumptions(catalog) {
 
 function defaultBoardStocks() {
   return [
-    { id: "default-alder", name: "Alder", costPerBdFt: 4.5, wasteFactorPercent: 0, wasteMultiplier: 1.0, usedFor: "Face Frames" },
-    { id: "default-poplar", name: "Poplar", costPerBdFt: 3.5, wasteFactorPercent: 0, wasteMultiplier: 1.0, usedFor: "Face Frames" }
+    { id: "default-poplar-s2s", name: "4/4 Poplar S2S", costPerBdFt: 2.75, wasteFactorPercent: 0, wasteMultiplier: 1, usedFor: "Face Frames, Fillers" }
   ];
+}
+
+function defaultMaterials() {
+  return [
+    { id: "default-maple-melamine-carcass", category: "carcass", name: "3/4 Maple Melamine", thickness: 0.75, length: 96, width: 48, costPerSheet: 50, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-maple-melamine-back", category: "back", name: "1/4 Maple Melamine", thickness: 0.25, length: 96, width: 48, costPerSheet: 20, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-baltic-birch-drawer-box", category: "drawerBox", name: "1/2 Baltic Birch Ply", thickness: 0.5, length: 96, width: 48, costPerSheet: 85, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-prefinished-maple-drawer-bottom", category: "drawerBottom", name: "1/4 Prefinished Maple Ply", thickness: 0.25, length: 96, width: 48, costPerSheet: 27, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-melamine-finished-end", category: "finishedEnd", name: "3/4 1s Melamine 1s PG", thickness: 0.75, length: 96, width: 48, costPerSheet: 55, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-particle-board-nailer", category: "nailer", name: "1/2 Particle Board", thickness: 0.5, length: 96, width: 48, costPerSheet: 24, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
+    { id: "default-toe-ply", category: "toeKick", name: "3/4 TOE PLY", thickness: 0.75, length: 96, width: 48, costPerSheet: 30, wasteFactorPercent: 15, wasteMultiplier: 1.15 }
+  ];
+}
+
+function defaultCatalogItems() {
+  return {
+    materials: defaultMaterials(),
+    slides: [
+      { id: "default-blum-tandem-21", name: "21\" Blum Tandem Slides", costPerPair: 30, wasteFactorPercent: 0, wasteMultiplier: 1 }
+    ],
+    doorStyles: [
+      { id: "default-pg-shaker-door", name: "PG Shaker Door", costPerSqFt: 12 }
+    ],
+    paintTypes: [
+      { id: "default-sw-proclassic", name: "Sherwin Williams ProClassic Paint", primerCostPerGallon: 90, topcoatCostPerGallon: 90 }
+    ],
+    hingeTypes: [
+      { id: "default-blum-110-soft-close", name: "Blum 110 Soft Close", costEach: 4, wasteFactorPercent: 0, wasteMultiplier: 1 }
+    ],
+    basePlateTypes: [
+      { id: "default-blum-cast-face-frame-plate", name: "Blum Cast Face Frame Plate", costEach: 0.8, wasteFactorPercent: 0, wasteMultiplier: 1 },
+      { id: "default-frameless-blum-cam-adj-base-plate", name: "Frameless Blum Cam Adj Base Plates", costEach: 0.8, wasteFactorPercent: 0, wasteMultiplier: 1 }
+    ],
+    boardStocks: defaultBoardStocks(),
+    crownMouldings: [
+      { id: "default-pg-traditional-crown", name: "3-1/2 Inch Traditional Crown, PG", costPerLf: 3, wasteFactorPercent: 15, wasteMultiplier: 1.15, usedFor: "Crown Moulding" }
+    ],
+    edgeBandings: [
+      { id: "default-alder-edgeband-13-16", name: "13/16 Alder Edgeband Roll", lengthPerRoll: 320, costPerRoll: 60 }
+    ]
+  };
 }
 
 function localProjects() {
@@ -925,17 +1090,41 @@ function saveLocalProjects(projects) {
 
 function localCatalog() {
   let catalog = normalizeCatalog(readLocalJson(localStorageKey(LOCAL_CATALOG_KEY), {
-    materials: [],
-    slides: [],
+    ...defaultCatalogItems(),
     accessories: [],
-    doorStyles: [],
-    paintTypes: [],
     hingeTypes: [],
     basePlateTypes: [],
-    boardStocks: [],
-    crownMouldings: [],
     constructionAssumptions: []
   }));
+
+  if (catalog.catalogDefaultsVersion < 4) {
+    const defaults = defaultCatalogItems();
+    const additions = catalog.catalogDefaultsVersion < 1
+      ? defaults
+      : catalog.catalogDefaultsVersion < 2
+        ? {
+        materials: defaults.materials.filter((item) => ["default-melamine-finished-end", "default-particle-board-nailer"].includes(item.id)),
+        hingeTypes: defaults.hingeTypes,
+        basePlateTypes: defaults.basePlateTypes
+        }
+        : {
+          ...(catalog.catalogDefaultsVersion < 3
+            ? { materials: defaults.materials.filter((item) => item.id === "default-toe-ply") }
+            : {}),
+          edgeBandings: defaults.edgeBandings
+        };
+    if (catalog.catalogDefaultsVersion < 1) {
+      catalog.boardStocks = catalog.boardStocks.filter((item) => !(
+        (item.id === "default-alder" && item.name === "Alder" && item.costPerBdFt === 4.5)
+        || (item.id === "default-poplar" && item.name === "Poplar" && item.costPerBdFt === 3.5)
+      ));
+    }
+    Object.entries(additions).forEach(([key, items]) => {
+      const existingIds = new Set(catalog[key].map((item) => item.id));
+      catalog[key] = [...catalog[key], ...items.filter((item) => !existingIds.has(item.id))];
+    });
+    catalog.catalogDefaultsVersion = 4;
+  }
 
   catalog = withDefaultConstructionAssumptions(catalog);
 
@@ -1184,7 +1373,11 @@ function collectConstructionAssumptionFromInputs(type) {
     tallDepth: toNumber(byId("tallDepth").value),
     avgWidth: Math.max(1, toNumber(byId("avgWidth").value)),
     toeKickHeight: Math.max(1, toNumber(byId("toeKickHeight").value)),
-    nailerRipSize: Math.max(1, toNumber(byId("nailerRipSize").value))
+    nailerRipSize: Math.max(1, toNumber(byId("nailerRipSize").value)),
+    fillerWidth: Math.max(0.1, toNumber(byId("fillerWidth").value)),
+    lfPerFiller: Math.max(0.1, toNumber(byId("lfPerFiller").value)),
+    fillerHeightMode: byId("fillerHeightMode").value === "specified" ? "specified" : "average",
+    fillerHeight: Math.max(1, toNumber(byId("fillerHeight").value))
   };
 }
 
@@ -1209,7 +1402,11 @@ function applyConstructionAssumption(type) {
     tallDepth: assumption.tallDepth,
     avgWidth: assumption.avgWidth,
     toeKickHeight: assumption.toeKickHeight,
-    nailerRipSize: assumption.nailerRipSize
+    nailerRipSize: assumption.nailerRipSize,
+    fillerWidth: assumption.fillerWidth,
+    lfPerFiller: assumption.lfPerFiller,
+    fillerHeightMode: assumption.fillerHeightMode,
+    fillerHeight: assumption.fillerHeight
   };
 
   Object.keys(map).forEach((id) => {
@@ -1319,7 +1516,11 @@ function collectSettings() {
     useStandardMaterials: byId("useStandardMaterialsSelect").value === "yes",
     toeKickHeight: Math.max(1, toNumber(byId("toeKickHeight").value)),
     toeKickSleeperSpacing: Math.max(1, toNumber(byId("toeKickSleeperSpacing").value)),
-    nailerRipSize: Math.max(1, toNumber(byId("nailerRipSize").value))
+    nailerRipSize: Math.max(1, toNumber(byId("nailerRipSize").value)),
+    fillerWidth: Math.max(0.1, toNumber(byId("fillerWidth").value)),
+    lfPerFiller: Math.max(0.1, toNumber(byId("lfPerFiller").value)),
+    fillerHeightMode: byId("fillerHeightMode").value === "specified" ? "specified" : "average",
+    fillerHeight: Math.max(1, toNumber(byId("fillerHeight").value))
   };
 }
 
@@ -1338,7 +1539,8 @@ function collectSelections() {
     boardStockId: byId("boardStockSelect").value || "",
     toeKickMaterialId: byId("toeKickMaterialSelect").value || "",
     nailerMaterialId: byId("nailerMaterialSelect").value || "",
-    crownMaterialId: byId("crownMaterialSelect").value || ""
+    crownMaterialId: byId("crownMaterialSelect").value || "",
+    edgeBandingId: byId("edgeBandingSelect").value || ""
   };
 }
 
@@ -1361,8 +1563,8 @@ function applyProject(project) {
     tallDepth: settings.tallDepth,
     tallLF: settings.tallLF,
     tallFinishedEndsQty: settings.tallFinishedEndsQty,
-    constructionTypeSelect: settings.constructionType || "faceFrame",
-    jobConstructionTypeSelect: settings.constructionType || "faceFrame",
+    constructionTypeSelect: settings.constructionType || "frameless",
+    jobConstructionTypeSelect: settings.constructionType || "frameless",
     avgWidth: settings.avgWidth,
     hasDrawersSelect: settings.hasDrawers === false ? "no" : "yes",
     howManyDrawers: settings.totalDrawerCount,
@@ -1390,7 +1592,8 @@ function applyProject(project) {
     boardStockSelect: selections.boardStockId,
     toeKickMaterialSelect: selections.toeKickMaterialId,
     nailerMaterialSelect: selections.nailerMaterialId,
-    crownMaterialSelect: selections.crownMaterialId
+    crownMaterialSelect: selections.crownMaterialId,
+    edgeBandingSelect: selections.edgeBandingId
   };
 
   Object.keys(map).forEach((id) => {
@@ -1425,7 +1628,7 @@ function applyProject(project) {
   refreshAutoDrawerLineal();
 
   byId("projectName").value = project.name || "";
-  setConstructionType(settings.constructionType || "faceFrame", true);
+  setConstructionType(settings.constructionType || "frameless", true);
   if (byId("useStandardMaterialsSelect").value === "yes") {
     applyStandardMaterials();
   }
@@ -1437,7 +1640,7 @@ function applyProject(project) {
 function applyStandardMaterials() {
   const profile = (byId("jobConstructionTypeSelect") && byId("jobConstructionTypeSelect").value)
     || (byId("constructionTypeSelect") && byId("constructionTypeSelect").value)
-    || "faceFrame";
+    || "frameless";
   const standards = getStandardSelections(profile);
   const sheetMap = {
     carcassMaterialSelect: standards.sheetMaterials.carcass,
@@ -1450,31 +1653,34 @@ function applyStandardMaterials() {
   };
 
   Object.keys(sheetMap).forEach((id) => {
-    if (sheetMap[id] && byId(id)) {
-      byId(id).value = sheetMap[id];
+    if (byId(id)) {
+      byId(id).value = sheetMap[id] || "";
     }
   });
 
-  if (standards.crownMouldingId && byId("crownMaterialSelect")) {
-    byId("crownMaterialSelect").value = standards.crownMouldingId;
+  if (byId("crownMaterialSelect")) {
+    byId("crownMaterialSelect").value = standards.crownMouldingId || "";
   }
-  if (standards.boardStockId && byId("boardStockSelect")) {
-    byId("boardStockSelect").value = standards.boardStockId;
+  if (byId("edgeBandingSelect")) {
+    byId("edgeBandingSelect").value = standards.edgeBandingId || "";
   }
-  if (standards.drawerSlideId && byId("drawerSlideSelect")) {
-    byId("drawerSlideSelect").value = standards.drawerSlideId;
+  if (byId("boardStockSelect")) {
+    byId("boardStockSelect").value = standards.boardStockId || "";
   }
-  if (standards.hingeTypeId && byId("hingeTypeSelect")) {
-    byId("hingeTypeSelect").value = standards.hingeTypeId;
+  if (byId("drawerSlideSelect")) {
+    byId("drawerSlideSelect").value = standards.drawerSlideId || "";
   }
-  if (standards.basePlateTypeId && byId("basePlateTypeSelect")) {
-    byId("basePlateTypeSelect").value = standards.basePlateTypeId;
+  if (byId("hingeTypeSelect")) {
+    byId("hingeTypeSelect").value = standards.hingeTypeId || "";
   }
-  if (standards.doorStyleId && byId("doorStyleSelect")) {
-    byId("doorStyleSelect").value = standards.doorStyleId;
+  if (byId("basePlateTypeSelect")) {
+    byId("basePlateTypeSelect").value = standards.basePlateTypeId || "";
   }
-  if (standards.paintTypeId && byId("paintTypeSelect")) {
-    byId("paintTypeSelect").value = standards.paintTypeId;
+  if (byId("doorStyleSelect")) {
+    byId("doorStyleSelect").value = standards.doorStyleId || "";
+  }
+  if (byId("paintTypeSelect")) {
+    byId("paintTypeSelect").value = standards.paintTypeId || "";
   }
 
   if (Array.isArray(standards.accessoryIds) && standards.accessoryIds.length) {
@@ -1515,6 +1721,7 @@ function switchMaterialSubTab(tabName) {
     doors: "doorsTab",
     paint: "paintTab",
     moulding: "mouldingTab",
+    edgeBanding: "edgeBandingTab",
     accessories: "accessoriesTab",
     defaults: "defaultsTab"
   };
@@ -1629,6 +1836,25 @@ function fillCrownMouldingSelect(selectedValue) {
   });
 }
 
+function fillEdgeBandingSelect(selectedValue) {
+  const select = byId("edgeBandingSelect");
+  if (!select) {
+    return;
+  }
+  if (!state.catalog.edgeBandings.length) {
+    select.innerHTML = '<option value="">No edgebanding added yet</option>';
+    return;
+  }
+  select.innerHTML = '<option value="">Select edgebanding</option>';
+  state.catalog.edgeBandings.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = `${item.name} - ${item.lengthPerRoll} LF/roll, ${dollars(item.costPerRoll)}/roll`;
+    option.selected = selectedValue === item.id;
+    select.appendChild(option);
+  });
+}
+
 function populateSelectionDropdowns() {
   const previous = collectSelections();
 
@@ -1640,6 +1866,7 @@ function populateSelectionDropdowns() {
   fillMaterialSelect("toeKickMaterialSelect", "toeKick", previous.toeKickMaterialId);
   fillMaterialSelect("nailerMaterialSelect", "nailer", previous.nailerMaterialId);
   fillCrownMouldingSelect(previous.crownMaterialId);
+  fillEdgeBandingSelect(previous.edgeBandingId);
 
   const slideSelect = byId("drawerSlideSelect");
   if (state.catalog.slides.length === 0) {
@@ -1802,6 +2029,31 @@ function renderMouldingTable() {
   `).join("");
 }
 
+function renderEdgeBandingTable() {
+  const body = byId("edgeBandingTableBody");
+  if (!body) {
+    return;
+  }
+  if (!state.catalog.edgeBandings.length) {
+    body.innerHTML = '<tr><td colspan="5" class="meta">No edgebanding added yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = state.catalog.edgeBandings.map((item) => `
+    <tr>
+      <td><strong>${item.name}</strong></td>
+      <td>${round2(item.lengthPerRoll)} LF</td>
+      <td>${dollars(item.costPerRoll)}</td>
+      <td>${dollars(item.costPerRoll / item.lengthPerRoll)}/LF</td>
+      <td>
+        <div class="action-cell">
+          <button type="button" class="mini-btn" data-edit-edgebanding-id="${item.id}">Edit</button>
+          <button type="button" class="mini-btn" data-edgebanding-id="${item.id}">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
 function renderHardwareTable() {
   const body = byId("hardwareTableBody");
   const rows = [];
@@ -1954,6 +2206,10 @@ function getAccessoryById(id) {
 
 function getCrownMouldingById(id) {
   return state.catalog.crownMouldings.find((item) => item.id === id);
+}
+
+function getEdgeBandingById(id) {
+  return state.catalog.edgeBandings.find((item) => item.id === id);
 }
 
 function renderJobAccessoryList() {
@@ -2168,9 +2424,43 @@ function renderDefaultsMoulding(profile, standards) {
   }
 }
 
+function renderDefaultsEdgeBanding(profile, standards) {
+  const wrap = byId("defaultEdgeBandingList");
+  if (!wrap) {
+    return;
+  }
+  if (!state.catalog.edgeBandings.length) {
+    wrap.innerHTML = '<p class="meta">No edgebanding yet.</p>';
+    return;
+  }
+  wrap.innerHTML = `
+    <label class="list-item">
+      <strong>Edgebanding</strong>
+      <select data-standard-profile="${profile}" data-standard-type="edgeBanding">
+        <option value="">Select</option>
+        ${state.catalog.edgeBandings.map((item) => `
+          <option value="${item.id}">${item.name} - ${item.lengthPerRoll} LF/roll, ${dollars(item.costPerRoll)}/roll</option>
+        `).join("")}
+      </select>
+    </label>
+  `;
+  const select = wrap.querySelector("select");
+  if (select) {
+    select.value = standards.edgeBandingId || "";
+  }
+}
+
 function renderDefaultsUi() {
   const profileSelect = byId("defaultsProfileSelect");
-  const profile = profileSelect ? profileSelect.value : "faceFrame";
+  const profile = profileSelect ? profileSelect.value : "frameless";
+  const profileNames = getStandardProfileNames();
+  if (profileSelect) {
+    Array.from(profileSelect.options).forEach((option) => {
+      if (profileNames[option.value]) {
+        option.textContent = profileNames[option.value];
+      }
+    });
+  }
   const standards = getStandardSelections(profile);
 
   renderDefaultsPanelStock(profile, standards);
@@ -2178,6 +2468,7 @@ function renderDefaultsUi() {
   renderDefaultsHardware(profile, standards);
   renderDefaultsDoorPaint(profile, standards);
   renderDefaultsMoulding(profile, standards);
+  renderDefaultsEdgeBanding(profile, standards);
 }
 
 function getMaterialById(id) {
@@ -2217,6 +2508,7 @@ async function refreshCatalogUi() {
   renderDoorTable();
   renderPaintTable();
   renderMouldingTable();
+  renderEdgeBandingTable();
   renderAccessoryTable();
   renderDefaultsUi();
   renderJobAccessoryList();
@@ -2701,6 +2993,42 @@ async function addCrownMoulding() {
   await refreshCatalogUi();
 }
 
+async function addEdgeBanding() {
+  const payload = {
+    name: byId("newEdgeBandingName").value.trim(),
+    lengthPerRoll: toNumber(byId("newEdgeBandingLength").value),
+    costPerRoll: Math.max(0, toNumber(byId("newEdgeBandingCost").value))
+  };
+  if (!payload.name || payload.lengthPerRoll <= 0) {
+    alert("Enter an edgebanding name and a roll length greater than zero.");
+    return;
+  }
+
+  if (await ensureDataMode() === "api") {
+    try {
+      const response = await apiFetch("/api/catalog/edge-bandings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        throw new Error("Could not add edgebanding");
+      }
+    } catch (_err) {
+      state.dataMode = "local";
+    }
+  }
+  if (state.dataMode === "local") {
+    const catalog = localCatalog();
+    catalog.edgeBandings.push({ id: newId(), ...payload });
+    saveLocalCatalog(catalog);
+  }
+  byId("newEdgeBandingName").value = "";
+  byId("newEdgeBandingLength").value = "320";
+  byId("newEdgeBandingCost").value = "60";
+  await refreshCatalogUi();
+}
+
 async function deleteMaterial(id) {
   if (await ensureDataMode() === "api") {
     try {
@@ -2893,6 +3221,25 @@ async function deleteCrownMoulding(id) {
     saveLocalCatalog(catalog);
   }
 
+  await refreshCatalogUi();
+}
+
+async function deleteEdgeBanding(id) {
+  if (await ensureDataMode() === "api") {
+    try {
+      const response = await apiFetch(`/api/catalog/edge-bandings/${id}`, { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error("Could not delete edgebanding");
+      }
+    } catch (_err) {
+      state.dataMode = "local";
+    }
+  }
+  if (state.dataMode === "local") {
+    const catalog = localCatalog();
+    catalog.edgeBandings = catalog.edgeBandings.filter((item) => item.id !== id);
+    saveLocalCatalog(catalog);
+  }
   await refreshCatalogUi();
 }
 
@@ -3226,7 +3573,22 @@ function calculate() {
   const tallFrame = calcFrameOrEdgebandByType(settings.tallLF, settings.tallHeight, settings.avgWidth, 3);
   const faceFrameBoardFeet = lowerFrame.boardFeet + upperFrame.boardFeet + tallFrame.boardFeet;
   const framelessEdgebandLf = lowerFrame.edgeBandLf + upperFrame.edgeBandLf + tallFrame.edgeBandLf;
+  const edgeBanding = getEdgeBandingById(selections.edgeBandingId);
+  const edgeBandingCost = settings.constructionType === "frameless" && edgeBanding && edgeBanding.lengthPerRoll > 0
+    ? framelessEdgebandLf * (edgeBanding.costPerRoll / edgeBanding.lengthPerRoll)
+    : 0;
   const boardStockWasteMultiplier = boardStock && boardStock.wasteMultiplier ? boardStock.wasteMultiplier : 1.0;
+
+  // Euro hardwood fillers: count from run length, height from job average or a fixed value.
+  const totalCabinetLf = settings.lowerLF + settings.upperLF + settings.tallLF;
+  const averageCabinetHeight = totalCabinetLf > 0
+    ? ((settings.lowerLF * settings.lowerHeight) + (settings.upperLF * settings.upperHeight) + (settings.tallLF * settings.tallHeight)) / totalCabinetLf
+    : 0;
+  const fillerHeightUsed = settings.fillerHeightMode === "specified" ? settings.fillerHeight : averageCabinetHeight;
+  const fillerCount = settings.constructionType === "frameless" ? totalCabinetLf / settings.lfPerFiller : 0;
+  const fillerBoardFeet = boardFeetFromLinearInches(fillerCount * fillerHeightUsed, settings.fillerWidth, FRAME_MEMBER_THICKNESS_IN);
+  const fillerBoardFeetWithWaste = fillerBoardFeet * boardStockWasteMultiplier;
+  const fillerCost = boardStock ? fillerBoardFeetWithWaste * boardStock.costPerBdFt : 0;
   const boardFeetWithWaste = faceFrameBoardFeet * boardStockWasteMultiplier;
   const boardStockCost = settings.constructionType === "faceFrame" && boardStock ? boardFeetWithWaste * boardStock.costPerBdFt : 0;
 
@@ -3255,7 +3617,7 @@ function calculate() {
   const totalLaborCost = buildLaborCost + installLaborCost + finishLaborCost;
 
   const combinedSqFt = totalCarcassSqFt + totalBackSqFt + totalFinishedEndsSqFt + drawerBoxSqFt + drawerBottomSqFt + estimatedDoorSqFt + toeKickAreaSqFt + nailerAreaSqFt;
-  const cabinetBoxSheetGoodsCost = carcassUsage.cost + backUsage.cost + finishedEndUsage.cost + toeKickCost + nailerCost + crownCost + boardStockCost;
+  const cabinetBoxSheetGoodsCost = carcassUsage.cost + backUsage.cost + finishedEndUsage.cost + toeKickCost + nailerCost + crownCost + boardStockCost + edgeBandingCost + fillerCost;
   const cabinetBoxHardwareCost = 0;
   const cabinetBoxTotalCost = cabinetBoxSheetGoodsCost + cabinetBoxHardwareCost;
 
@@ -3309,7 +3671,7 @@ function calculate() {
         <div class="result-line"><span>Estimated Door Area</span><span class="result-value">${round2(estimatedDoorSqFt)} sq ft</span></div>
         <div class="result-line"><span>Crown Moulding LF</span><span class="result-value">${round2(crownTotalLF)} LF (${round2(crownLfWithWaste)} LF with ${round2(crownWastePercent || ((crownWasteMultiplier - 1) * 100))}% waste)</span></div>
         <div class="result-line"><span>Construction Type</span><span class="result-value">${settings.constructionType === "faceFrame" ? "Face Frame" : "Frameless / Euro"}</span></div>
-        ${settings.constructionType === "faceFrame" ? `<div class="result-line"><span>Face Frame Board Stock</span><span class="result-value">${round2(faceFrameBoardFeet)} bd ft (design) → ${round2(boardFeetWithWaste)} bd ft (with ${round2((boardStockWasteMultiplier - 1) * 100)}% waste)</span></div>` : `<div class="result-line"><span>Edgebanding</span><span class="result-value">${round2(framelessEdgebandLf)} LF</span></div>`}
+        ${settings.constructionType === "faceFrame" ? `<div class="result-line"><span>Face Frame Board Stock</span><span class="result-value">${round2(faceFrameBoardFeet)} bd ft (design) → ${round2(boardFeetWithWaste)} bd ft (with ${round2((boardStockWasteMultiplier - 1) * 100)}% waste)</span></div>` : `<div class="result-line"><span>Edgebanding</span><span class="result-value">${round2(framelessEdgebandLf)} LF${edgeBanding ? ` (${edgeBanding.name}: ${dollars(edgeBandingCost)})` : ""}</span></div>`}
         <div class="result-line"><span>Combined Material</span><span class="result-value">${round2(combinedSqFt)} sq ft</span></div>
       </article>
     `
@@ -3343,7 +3705,10 @@ function calculate() {
       <div class="result-line result-separator"><span>Board Stock</span><span class="result-value"></span></div>
       ${settings.constructionType === "faceFrame"
         ? `<div class="result-line"><span>${boardStock ? boardStock.name : "Board Stock"}</span><span class="result-value">${round2(boardFeetWithWaste)} bd ft (${round2(faceFrameBoardFeet)} design + waste) for ${dollars(boardStockCost)}</span></div>`
-        : `<div class="result-line"><span>Edgebanding</span><span class="result-value">${round2(framelessEdgebandLf)} LF (reference only)</span></div>`}
+        : `<div class="result-line"><span>Edgebanding</span><span class="result-value">${round2(framelessEdgebandLf)} LF${edgeBanding ? ` at ${dollars(edgeBanding.costPerRoll / edgeBanding.lengthPerRoll)}/LF = ${dollars(edgeBandingCost)}` : " (not selected)"}</span></div>`}
+      ${settings.constructionType === "frameless"
+        ? `<div class="result-line"><span>${boardStock ? boardStock.name : "Board Stock"} - Fillers</span><span class="result-value">${round2(fillerCount)} fillers @ ${round2(settings.fillerWidth)} in x ${round2(fillerHeightUsed)} in = ${round2(fillerBoardFeetWithWaste)} bd ft (with waste) for ${dollars(fillerCost)}</span></div>`
+        : ""}
       <div class="result-line"><span>Crown Moulding</span><span class="result-value">${crownMaterial ? `${round2(crownLfWithWaste)} LF (${round2(crownTotalLF)} LF + ${round2(crownWastePercent || ((crownWasteMultiplier - 1) * 100))}% waste) at ${dollars(crownMaterial.costPerLf)}/LF = ${dollars(crownCost)}` : "Not selected"}</span></div>
 
       <div class="result-line result-separator"><span>Hardwares</span><span class="result-value"></span></div>
@@ -3365,7 +3730,8 @@ function calculate() {
       <div class="result-line"><span>Crown Moulding Cost</span><span class="result-value">${dollars(crownCost)}</span></div>
       ${settings.constructionType === "faceFrame"
         ? `<div class="result-line"><span>Board Stock Cost</span><span class="result-value">${dollars(boardStockCost)}</span></div>`
-        : `<div class="result-line"><span>Edgebanding Qty</span><span class="result-value">${round2(framelessEdgebandLf)} LF</span></div>`}
+        : `<div class="result-line"><span>Edgebanding Cost</span><span class="result-value">${dollars(edgeBandingCost)}</span></div>`}
+      ${settings.constructionType === "frameless" ? `<div class="result-line"><span>Filler Board Stock Cost</span><span class="result-value">${dollars(fillerCost)}</span></div>` : ""}
       <div class="result-line result-separator"><span>Cabinet Box Subtotal</span><span class="result-value total">${dollars(cabinetBoxTotalCost)}</span></div>
     </article>
 
@@ -3543,6 +3909,21 @@ function bindListDeleteEvents() {
     }
   });
 
+  byId("edgeBandingTableBody").addEventListener("click", async (event) => {
+    const id = event.target.dataset.edgebandingId;
+    const editId = event.target.dataset.editEdgebandingId;
+    if (editId) {
+      await editEdgeBanding(editId);
+      return;
+    }
+    if (!id) {
+      return;
+    }
+    if (confirm("Delete this edgebanding?")) {
+      await deleteEdgeBanding(id);
+    }
+  });
+
   byId("accessoryTableBody").addEventListener("click", async (event) => {
     const id = event.target.dataset.accessoryId;
     const editId = event.target.dataset.editAccessoryId;
@@ -3567,7 +3948,8 @@ function bindListDeleteEvents() {
     "defaultHardwareList",
     "defaultDoorList",
     "defaultPaintList",
-    "defaultMouldingList"
+    "defaultMouldingList",
+    "defaultEdgeBandingList"
   ].forEach((id) => {
     const el = byId(id);
     if (el) {
@@ -3608,8 +3990,8 @@ function bindCalculationInputs() {
     "lowerFinishedEndsQty", "upperFinishedEndsQty", "tallFinishedEndsQty",
     "avgWidth", "howManyDrawers", "totalDoorCount", "drawerDepth", "wasteFactorPercent", "constructionTypeSelect", "jobConstructionTypeSelect", "hasDrawersSelect",
     "buildLfPerHour", "installLfPerHour", "finishLfPerHour", "shopCostPerHour",
-    "carcassMaterialSelect", "backMaterialSelect", "finishedEndMaterialSelect", "drawerBoxMaterialSelect", "drawerBottomMaterialSelect", "drawerSlideSelect", "doorStyleSelect", "paintTypeSelect", "hingeTypeSelect", "basePlateTypeSelect", "boardStockSelect",
-    "toeKickMaterialSelect", "nailerMaterialSelect", "crownMaterialSelect", "toeKickHeight", "toeKickSleeperSpacing", "nailerRipSize",
+    "carcassMaterialSelect", "backMaterialSelect", "finishedEndMaterialSelect", "drawerBoxMaterialSelect", "drawerBottomMaterialSelect", "drawerSlideSelect", "doorStyleSelect", "paintTypeSelect", "hingeTypeSelect", "basePlateTypeSelect", "boardStockSelect", "edgeBandingSelect",
+    "toeKickMaterialSelect", "nailerMaterialSelect", "crownMaterialSelect", "toeKickHeight", "toeKickSleeperSpacing", "nailerRipSize", "fillerWidth", "lfPerFiller", "fillerHeightMode", "fillerHeight",
     "includeBuildSelect", "includeInstallSelect", "includeFinishSelect", "useStandardMaterialsSelect"
   ];
 
@@ -3718,6 +4100,7 @@ function bindUiEvents() {
   byId("addPaintTypeBtn").addEventListener("click", addPaintType);
   byId("addBoardStockBtn").addEventListener("click", addBoardStock);
   byId("addCrownBtn").addEventListener("click", addCrownMoulding);
+  byId("addEdgeBandingBtn").addEventListener("click", addEdgeBanding);
   byId("addJobAccessoryBtn").addEventListener("click", addJobAccessory);
   byId("printOrderSheetBtn").addEventListener("click", () => {
     updatePrintHeader();
@@ -3735,6 +4118,7 @@ function bindUiEvents() {
   byId("doorsTabBtn").addEventListener("click", () => switchMaterialSubTab("doors"));
   byId("paintTabBtn").addEventListener("click", () => switchMaterialSubTab("paint"));
   byId("mouldingTabBtn").addEventListener("click", () => switchMaterialSubTab("moulding"));
+  byId("edgeBandingTabBtn").addEventListener("click", () => switchMaterialSubTab("edgeBanding"));
   byId("accessoriesTabBtn").addEventListener("click", () => switchMaterialSubTab("accessories"));
   byId("defaultsTabBtn").addEventListener("click", () => switchMaterialSubTab("defaults"));
 
@@ -3746,6 +4130,9 @@ function bindUiEvents() {
 
   byId("defaultsProfileSelect").addEventListener("change", () => {
     renderDefaultsUi();
+  });
+  byId("renameDefaultsProfileBtn").addEventListener("click", () => {
+    renameStandardProfile(byId("defaultsProfileSelect").value);
   });
   byId("wasteFactorPercent").addEventListener("input", scheduleSetupSettingsSave);
   ["input", "change"].forEach((eventName) => {

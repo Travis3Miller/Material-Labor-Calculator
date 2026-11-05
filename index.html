@@ -55,14 +55,14 @@
             <p class="job-select-subhead">CABINET MATERIALS</p>
             <label>Default Materials
               <select id="useStandardMaterialsSelect">
-                <option value="no" selected>Custom selections</option>
-                <option value="yes">Use defaults</option>
+                <option value="no">Custom selections</option>
+                <option value="yes" selected>Use defaults</option>
               </select>
             </label>
             <label>Construction Type For This Job
               <select id="jobConstructionTypeSelect">
-                <option value="faceFrame" selected>Face Frame</option>
-                <option value="frameless">Frameless / Euro</option>
+                <option value="faceFrame">Face Frame</option>
+                <option value="frameless" selected>Frameless / Euro</option>
               </select>
             </label>
             <label>Carcass Sheet Material
@@ -102,6 +102,11 @@
               <label>Crown Moulding Material
                 <select id="crownMaterialSelect">
                   <option value="">Select crown moulding material</option>
+                </select>
+              </label>
+              <label>Edgebanding
+                <select id="edgeBandingSelect">
+                  <option value="">Select edgebanding</option>
                 </select>
               </label>
 
@@ -255,8 +260,8 @@
         <div class="single-row">
           <label>Assumption Profile
             <select id="constructionTypeSelect">
-              <option value="faceFrame" selected>Face Frame</option>
-              <option value="frameless">Frameless / Euro</option>
+              <option value="faceFrame">Face Frame</option>
+              <option value="frameless" selected>Frameless / Euro</option>
             </select>
           </label>
           <button id="saveAssumptionBtn" type="button" class="secondary">Save Assumption</button>
@@ -313,6 +318,23 @@
             <label>Standard Nailer Rip Size (in)
               <input id="nailerRipSize" type="number" min="1" step="0.01" value="3">
             </label>
+            <h3>Hardwood Fillers (Frameless / Euro)</h3>
+            <label>Typical Filler Width (in)
+              <input id="fillerWidth" type="number" min="0.1" step="0.01" value="2">
+            </label>
+            <label>Lineal Feet Per Filler
+              <input id="lfPerFiller" type="number" min="0.1" step="0.01" value="3">
+            </label>
+            <label>Filler Height
+              <select id="fillerHeightMode">
+                <option value="average">Use average cabinet height for the job</option>
+                <option value="specified">Use a specified height</option>
+              </select>
+            </label>
+            <label>Specified Filler Height (in)
+              <input id="fillerHeight" type="number" min="1" step="0.01" value="30">
+            </label>
+            <p class="help compact">Fillers = total cabinet LF ÷ lineal feet per filler. Average height is weighted by the lower, upper, and tall LF in the job. Fillers are cut from the selected board stock at 3/4 in thick.</p>
             <p class="help compact">Each profile saves its own lower/upper/tall standards plus typical width.</p>
           </div>
         </div>
@@ -330,6 +352,7 @@
           <button id="doorsTabBtn" type="button" class="sub-tab-btn">Doors</button>
           <button id="paintTabBtn" type="button" class="sub-tab-btn">Paint</button>
           <button id="mouldingTabBtn" type="button" class="sub-tab-btn">Moulding</button>
+          <button id="edgeBandingTabBtn" type="button" class="sub-tab-btn">Edgebanding</button>
           <button id="accessoriesTabBtn" type="button" class="sub-tab-btn">Accessories</button>
           <button id="defaultsTabBtn" type="button" class="sub-tab-btn">Defaults</button>
         </div>
@@ -578,6 +601,41 @@
           </div>
         </div>
 
+        <div id="edgeBandingTab" class="sub-tab-panel hidden">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3>Create Edgebanding</h3>
+              <label>Edgebanding Name
+                <input id="newEdgeBandingName" type="text" placeholder="13/16 Alder Edgeband Roll">
+              </label>
+              <div class="form-row">
+                <label>Lineal Feet Per Roll
+                  <input id="newEdgeBandingLength" type="number" min="0.01" step="0.01" value="320">
+                </label>
+                <label>Cost Per Roll ($)
+                  <input id="newEdgeBandingCost" type="number" min="0" step="0.01" value="60">
+                </label>
+              </div>
+              <button id="addEdgeBandingBtn" type="button">Create Edgebanding</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Edgebanding Name</th>
+                  <th>Lineal Feet Per Roll</th>
+                  <th>Cost Per Roll</th>
+                  <th>Cost Per Lineal Foot</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="edgeBandingTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div id="accessoriesTab" class="sub-tab-panel hidden">
           <div class="grid material-grid">
             <div class="input-group">
@@ -612,10 +670,11 @@
               <h3>Defaults Profile</h3>
               <label>Profile
                 <select id="defaultsProfileSelect">
-                  <option value="faceFrame">Face Frame</option>
-                  <option value="frameless">Frameless / Euro</option>
+                  <option value="faceFrame">Default Paint Grade Face Frame</option>
+                  <option value="frameless" selected>Default Paint Grade Frameless</option>
                 </select>
               </label>
+              <button id="renameDefaultsProfileBtn" type="button" class="secondary">Rename Profile</button>
               <label>Fallback Waste Factor (%)
                 <input id="wasteFactorPercent" type="number" min="0" step="0.01" value="15">
               </label>
@@ -650,6 +709,8 @@
             <div class="input-group">
               <h3>Moulding Defaults</h3>
               <div id="defaultMouldingList" class="list-grid"></div>
+              <h3>Edgebanding Defaults</h3>
+              <div id="defaultEdgeBandingList" class="list-grid"></div>
             </div>
           </div>
         </div>
