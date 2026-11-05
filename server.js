@@ -227,7 +227,7 @@ app.get("/api/config", async (req, res) => {
     name: req.currentUser ? req.currentUser.name : "",
     plan: isPro ? "pro" : "free",
     upgradeUrl: process.env.WIX_UPGRADE_URL || "",
-    admin: isAdmin(req),
+    ...(isAdmin(req) ? { admin: true } : {}),
     freeFeatures: FREE_FEATURES,
     proFeatures: PAID_FEATURES,
     appName: "Cabinet Material Calculator"

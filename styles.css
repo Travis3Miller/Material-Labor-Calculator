@@ -152,10 +152,6 @@ h1 {
   font-weight: 700;
 }
 
-.shared-defaults-toggle[hidden] {
-  display: none;
-}
-
 .member-star {
   color: #000;
 }

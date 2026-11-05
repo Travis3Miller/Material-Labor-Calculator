@@ -180,6 +180,33 @@ function resetSetupSettings() {
   renderDefaultsUi();
 }
 
+function syncSharedDefaultsToggle() {
+  const existing = byId("sharedDefaultsToggle");
+  if (!state.admin) {
+    existing?.remove();
+    return;
+  }
+  if (existing) {
+    return;
+  }
+  const heading = document.querySelector("#materialSetupTab h2");
+  if (!heading) {
+    return;
+  }
+  const label = document.createElement("label");
+  label.id = "sharedDefaultsToggle";
+  label.className = "shared-defaults-toggle";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = state.editShared;
+  checkbox.addEventListener("change", async () => {
+    state.editShared = state.admin && checkbox.checked;
+    await refreshCatalogUi();
+  });
+  label.append(checkbox, " Editing shared defaults (the list every member starts with)");
+  heading.after(label);
+}
+
 function openPaywall() {
   const dialog = byId("paywallDialog");
   const upgradeLink = byId("paywallUpgradeLink");
@@ -208,11 +235,7 @@ function applyPlanConfig(config) {
   if (!state.admin) {
     state.editShared = false;
   }
-  const sharedToggle = byId("sharedDefaultsToggle");
-  if (sharedToggle) {
-    sharedToggle.hidden = !state.admin;
-    byId("sharedDefaultsCheckbox").checked = state.editShared;
-  }
+  syncSharedDefaultsToggle();
   setWelcomeName(state.memberName, state.plan === "pro");
   if (previousPlan === "pro" && state.plan !== "pro") {
     resetSetupSettings();
@@ -3646,11 +3669,6 @@ async function hydratePlanBanner() {
 }
 
 function bindUiEvents() {
-  byId("sharedDefaultsCheckbox")?.addEventListener("change", async (event) => {
-    state.editShared = state.admin && event.target.checked;
-    await refreshCatalogUi();
-  });
-
   byId("lowerTopType").addEventListener("change", () => {
     toggleStretcherField();
     calculate();
