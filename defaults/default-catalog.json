@@ -1,0 +1,39 @@
+{
+  "constructionAssumptionCatalog": [
+    {
+      "type": "faceFrame",
+      "name": "Face Frame",
+      "lowerHeight": 34.5,
+      "lowerDepth": 24,
+      "lowerTopType": "full",
+      "stretcherWidth": 4,
+      "upperHeight": 30,
+      "upperDepth": 12,
+      "tallHeight": 90,
+      "tallDepth": 24,
+      "avgWidth": 18
+    },
+    {
+      "type": "frameless",
+      "name": "Frameless / Euro",
+      "lowerHeight": 34.5,
+      "lowerDepth": 24,
+      "lowerTopType": "full",
+      "stretcherWidth": 4,
+      "upperHeight": 30,
+      "upperDepth": 12,
+      "tallHeight": 90,
+      "tallDepth": 24,
+      "avgWidth": 18
+    }
+  ],
+  "materialCatalog": [],
+  "boardStockCatalog": [],
+  "slideCatalog": [],
+  "hingeTypeCatalog": [],
+  "basePlateTypeCatalog": [],
+  "doorStyleCatalog": [],
+  "paintTypeCatalog": [],
+  "crownMouldingCatalog": [],
+  "accessoryCatalog": []
+}

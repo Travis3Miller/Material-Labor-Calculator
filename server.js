@@ -1,13 +1,14 @@
 const express = require("express");
 const path = require("path");
 const fs = require("fs/promises");
+const fsSync = require("fs");
 const crypto = require("crypto");
 const { Pool } = require("pg");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = process.env.CALCULATOR_STORE_FILE || path.join(__dirname, "data", "store.json");
-const PUBLIC_SCOPE = "__public__";
+const DEFAULT_CATALOG_FILE = path.join(__dirname, "defaults", "default-catalog.json");
 const database = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL })
   : null;
@@ -75,29 +76,6 @@ function verifySessionToken(token) {
 function trustedWixBridge(req) {
   const secret = String(process.env.MATERIAL_LABOR_BRIDGE_SECRET || "").trim();
   return Boolean(secret && safeCompare(req.get("x-wix-bridge-secret"), secret));
-}
-
-function adminMemberIds() {
-  return new Set(String(process.env.ADMIN_MEMBER_IDS || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean));
-}
-
-function adminEmails() {
-  return new Set(String(process.env.ADMIN_EMAILS || "")
-    .split(",")
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean));
-}
-
-function isAdmin(req) {
-  const user = req.currentUser;
-  if (!user) {
-    return false;
-  }
-  const email = String(user.email || "").trim().toLowerCase();
-  return adminMemberIds().has(user.sub) || Boolean(email && adminEmails().has(email));
 }
 
 function paidPlanIds() {
@@ -209,7 +187,7 @@ async function ensureStoreFile() {
   try {
     await fs.access(DATA_FILE);
   } catch (_err) {
-    await fs.writeFile(DATA_FILE, JSON.stringify({ projects: [] }, null, 2), "utf8");
+    await fs.writeFile(DATA_FILE, JSON.stringify({ users: {} }, null, 2), "utf8");
   }
 }
 
@@ -239,7 +217,6 @@ app.get("/api/config", async (req, res) => {
     name: req.currentUser ? req.currentUser.name : "",
     plan: isPro ? "pro" : "free",
     upgradeUrl: process.env.WIX_UPGRADE_URL || "",
-    ...(isAdmin(req) ? { admin: true } : {}),
     freeFeatures: FREE_FEATURES,
     proFeatures: PAID_FEATURES,
     appName: "Cabinet Material Calculator"
@@ -312,15 +289,6 @@ app.use("/api/projects", (req, res, next) => {
 });
 
 app.use("/api/catalog", (req, res, next) => {
-  if (req.query.scope === "shared") {
-    if (!isAdmin(req)) {
-      res.status(403).json({ error: "Admin access required." });
-      return;
-    }
-    req.useSharedScope = true;
-    next();
-    return;
-  }
   if (req.method === "GET") {
     next();
     return;
@@ -378,50 +346,38 @@ app.put("/api/settings", async (req, res) => {
   }
 });
 
+function loadDefaultStore() {
+  let seed = {};
+  try {
+    seed = JSON.parse(fsSync.readFileSync(DEFAULT_CATALOG_FILE, "utf8"));
+  } catch (_err) {
+    seed = {};
+  }
+  return { ...normalizeStore(seed), projects: [], settings: {} };
+}
+
 async function readStore(req) {
   await databaseReady;
-  const userId = req && !req.useSharedScope && req.currentUser && req.currentUser.sub;
+  const userId = req && req.currentUser && req.currentUser.sub;
+  if (!userId) {
+    return loadDefaultStore();
+  }
   if (database) {
-    const scopeId = userId || PUBLIC_SCOPE;
     const result = await database.query(
       "SELECT store FROM material_labor_stores WHERE scope_id = $1",
-      [scopeId]
+      [userId]
     );
-    if (result.rows[0]) {
-      const store = normalizeStore(result.rows[0].store);
-      return userId ? store : { ...store, projects: [] };
-    }
-    if (userId) {
-      const shared = await database.query(
-        "SELECT store FROM material_labor_stores WHERE scope_id = $1",
-        [PUBLIC_SCOPE]
-      );
-      if (shared.rows[0]) {
-        return { ...normalizeStore(shared.rows[0].store), projects: [] };
-      }
-    }
+    return result.rows[0] ? normalizeStore(result.rows[0].store) : loadDefaultStore();
   }
   await ensureStoreFile();
-  const raw = await fs.readFile(DATA_FILE, "utf8");
-  const stored = JSON.parse(raw);
-  const globalStore = normalizeStore(stored.global || stored);
-  if (!userId) {
-    return { ...globalStore, projects: [] };
-  }
-  if (database) {
-    return { ...globalStore, projects: [] };
-  }
+  const stored = JSON.parse(await fs.readFile(DATA_FILE, "utf8"));
   const userKey = `member:${Buffer.from(userId).toString("base64url")}`;
   const userStore = stored.users && stored.users[userKey];
-  if (userStore) {
-    return normalizeStore(userStore);
-  }
-  return { ...globalStore, projects: [] };
+  return userStore ? normalizeStore(userStore) : loadDefaultStore();
 }
 
 async function writeStore(req, store) {
-  const shared = Boolean(req && req.useSharedScope);
-  const userId = shared ? PUBLIC_SCOPE : req && req.currentUser && req.currentUser.sub;
+  const userId = req && req.currentUser && req.currentUser.sub;
   if (!userId) {
     throw new Error("Authenticated user required to save app data.");
   }
@@ -432,26 +388,16 @@ async function writeStore(req, store) {
        VALUES ($1, $2::jsonb, NOW())
        ON CONFLICT (scope_id) DO UPDATE
        SET store = EXCLUDED.store, updated_at = NOW()`,
-      [userId, JSON.stringify(normalizeStore(shared ? { ...store, projects: [] } : store))]
+      [userId, JSON.stringify(normalizeStore(store))]
     );
     return;
   }
   await ensureStoreFile();
   const stored = JSON.parse(await fs.readFile(DATA_FILE, "utf8"));
-  const globalStore = normalizeStore(stored.global || stored);
-  if (shared) {
-    const sharedUsers = stored.users && typeof stored.users === "object" ? stored.users : Object.create(null);
-    await fs.writeFile(
-      DATA_FILE,
-      JSON.stringify({ global: normalizeStore({ ...store, projects: [] }), users: sharedUsers }, null, 2),
-      "utf8"
-    );
-    return;
-  }
   const users = stored.users && typeof stored.users === "object" ? stored.users : Object.create(null);
   const userKey = `member:${Buffer.from(userId).toString("base64url")}`;
   users[userKey] = normalizeStore(store);
-  await fs.writeFile(DATA_FILE, JSON.stringify({ global: globalStore, users }, null, 2), "utf8");
+  await fs.writeFile(DATA_FILE, JSON.stringify({ users }, null, 2), "utf8");
 }
 
 function normalizeStore(store) {

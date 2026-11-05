@@ -157,14 +157,6 @@ h1 {
   display: none;
 }
 
-.shared-defaults-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 12px;
-  font-weight: 700;
-}
-
 .member-star {
   color: #000;
 }
