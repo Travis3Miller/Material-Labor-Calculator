@@ -74,8 +74,8 @@ test("client-supplied plan flags never grant paid access", async () => {
     id: "default-poplar-s2s",
     name: "4/4 Poplar S2S",
     costPerBdFt: 2.75,
-    wasteFactorPercent: 0,
-    wasteMultiplier: 1,
+    wasteFactorPercent: 15,
+    wasteMultiplier: 1.15,
     usedFor: "Face Frames, Fillers"
   });
   assert.deepEqual(catalog.slides[0], {

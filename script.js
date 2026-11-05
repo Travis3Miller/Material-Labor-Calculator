@@ -1034,7 +1034,7 @@ function withDefaultConstructionAssumptions(catalog) {
 
 function defaultBoardStocks() {
   return [
-    { id: "default-poplar-s2s", name: "4/4 Poplar S2S", costPerBdFt: 2.75, wasteFactorPercent: 0, wasteMultiplier: 1, usedFor: "Face Frames, Fillers" }
+    { id: "default-poplar-s2s", name: "4/4 Poplar S2S", costPerBdFt: 2.75, wasteFactorPercent: 15, wasteMultiplier: 1.15, usedFor: "Face Frames, Fillers" }
   ];
 }
 
@@ -1097,7 +1097,7 @@ function localCatalog() {
     constructionAssumptions: []
   }));
 
-  if (catalog.catalogDefaultsVersion < 4) {
+  if (catalog.catalogDefaultsVersion < 5) {
     const defaults = defaultCatalogItems();
     const additions = catalog.catalogDefaultsVersion < 1
       ? defaults
@@ -1111,7 +1111,7 @@ function localCatalog() {
           ...(catalog.catalogDefaultsVersion < 3
             ? { materials: defaults.materials.filter((item) => item.id === "default-toe-ply") }
             : {}),
-          edgeBandings: defaults.edgeBandings
+          ...(catalog.catalogDefaultsVersion < 4 ? { edgeBandings: defaults.edgeBandings } : {})
         };
     if (catalog.catalogDefaultsVersion < 1) {
       catalog.boardStocks = catalog.boardStocks.filter((item) => !(
@@ -1119,11 +1119,16 @@ function localCatalog() {
         || (item.id === "default-poplar" && item.name === "Poplar" && item.costPerBdFt === 3.5)
       ));
     }
+    if (catalog.catalogDefaultsVersion >= 1) {
+      catalog.boardStocks = catalog.boardStocks.map((item) => item.id === "default-poplar-s2s" && !item.wasteFactorPercent
+        ? { ...item, wasteFactorPercent: 15, wasteMultiplier: 1.15 }
+        : item);
+    }
     Object.entries(additions).forEach(([key, items]) => {
       const existingIds = new Set(catalog[key].map((item) => item.id));
       catalog[key] = [...catalog[key], ...items.filter((item) => !existingIds.has(item.id))];
     });
-    catalog.catalogDefaultsVersion = 4;
+    catalog.catalogDefaultsVersion = 5;
   }
 
   catalog = withDefaultConstructionAssumptions(catalog);

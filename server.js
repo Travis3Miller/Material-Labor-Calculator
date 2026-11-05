@@ -465,7 +465,7 @@ function normalizeStore(store) {
     { id: "default-toe-ply", category: "toeKick", name: "3/4 TOE PLY", thickness: 0.75, length: 96, width: 48, costPerSheet: 30, wasteFactorPercent: 15, wasteMultiplier: 1.15 }
   ];
   const defaultBoardStock = [
-    { id: "default-poplar-s2s", name: "4/4 Poplar S2S", costPerBdFt: 2.75, wasteFactorPercent: 0, wasteMultiplier: 1, usedFor: "Face Frames, Fillers" }
+    { id: "default-poplar-s2s", name: "4/4 Poplar S2S", costPerBdFt: 2.75, wasteFactorPercent: 15, wasteMultiplier: 1.15, usedFor: "Face Frames, Fillers" }
   ];
   const defaultSlides = [
     { id: "default-blum-tandem-21", name: "21\" Blum Tandem Slides", costPerPair: 30, wasteFactorPercent: 0, wasteMultiplier: 1 }
@@ -548,7 +548,10 @@ function normalizeStore(store) {
   const slideCatalog = mergeDefaults(store.slideCatalog, defaultsVersion < 1 ? defaultSlides : []);
   const doorStyleCatalog = mergeDefaults(store.doorStyleCatalog, defaultsVersion < 1 ? defaultDoorStyles : []);
   const paintTypeCatalog = mergeDefaults(store.paintTypeCatalog, defaultsVersion < 1 ? defaultPaintTypes : []);
-  const boardStockCatalog = mergeDefaults(migratedBoardStocks, defaultsVersion < 1 ? defaultBoardStock : []);
+  const boardStockCatalog = mergeDefaults(migratedBoardStocks, defaultsVersion < 1 ? defaultBoardStock : [])
+    .map((item) => defaultsVersion >= 1 && defaultsVersion < 5 && item.id === "default-poplar-s2s" && !item.wasteFactorPercent
+      ? { ...item, wasteFactorPercent: 15, wasteMultiplier: 1.15 }
+      : item);
   const hingeTypeCatalog = mergeDefaults(store.hingeTypeCatalog, defaultsVersion < 2 ? defaultHingeTypes : []);
   const basePlateTypeCatalog = mergeDefaults(store.basePlateTypeCatalog, defaultsVersion < 2 ? defaultBasePlateTypes : []);
   const crownMouldingCatalog = mergeDefaults(store.crownMouldingCatalog, defaultsVersion < 1 ? defaultCrownMouldings : []);
@@ -559,7 +562,7 @@ function normalizeStore(store) {
   });
 
   return {
-    catalogDefaultsVersion: 4,
+    catalogDefaultsVersion: 5,
     projects: Array.isArray(store.projects) ? store.projects : [],
     settings: store.settings && typeof store.settings === "object" && !Array.isArray(store.settings)
       ? store.settings
