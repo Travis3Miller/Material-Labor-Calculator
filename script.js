@@ -46,10 +46,15 @@ const state = {
   memberId: "",
   sessionToken: "",
   authenticated: false,
+  admin: false,
+  editShared: false,
   restoringSettings: false
 };
 
 function apiFetch(path, options = {}) {
+  if (state.admin && state.editShared && path.startsWith("/api/catalog")) {
+    path += (path.includes("?") ? "&" : "?") + "scope=shared";
+  }
   const headers = new Headers(options.headers || {});
   if (state.sessionToken) {
     headers.set("Authorization", "Bearer " + state.sessionToken);
@@ -199,6 +204,15 @@ function applyPlanConfig(config) {
   state.config = config;
   state.plan = config.plan === "pro" ? "pro" : "free";
   state.authenticated = config.authenticated === true;
+  state.admin = config.admin === true;
+  if (!state.admin) {
+    state.editShared = false;
+  }
+  const sharedToggle = byId("sharedDefaultsToggle");
+  if (sharedToggle) {
+    sharedToggle.hidden = !state.admin;
+    byId("sharedDefaultsCheckbox").checked = state.editShared;
+  }
   setWelcomeName(state.memberName, state.plan === "pro");
   if (previousPlan === "pro" && state.plan !== "pro") {
     resetSetupSettings();
@@ -3632,6 +3646,11 @@ async function hydratePlanBanner() {
 }
 
 function bindUiEvents() {
+  byId("sharedDefaultsCheckbox")?.addEventListener("change", async (event) => {
+    state.editShared = state.admin && event.target.checked;
+    await refreshCatalogUi();
+  });
+
   byId("lowerTopType").addEventListener("change", () => {
     toggleStretcherField();
     calculate();
