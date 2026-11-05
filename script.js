@@ -261,19 +261,37 @@ function applyPlanConfig(config) {
     link.hidden = !upgradeUrl;
     link.textContent = state.plan === "pro" ? "Manage membership" : "Upgrade";
   }
-  ["cabinetStandardsTabBtn", "materialSetupTabBtn", "laborSetupTabBtn"].forEach((id) => {
-    const button = byId(id);
-    if (button) {
-      button.classList.toggle("locked-tab", state.plan !== "pro");
-      button.title = state.plan === "pro" ? "" : "Paid plan required";
-    }
+  document.querySelectorAll(".setup-upgrade-note").forEach((note) => {
+    note.hidden = state.plan === "pro";
   });
-  if (state.plan !== "pro" && byId("calculatorTab").classList.contains("hidden")) {
-    switchTab("calculator");
-  }
   if (state.plan !== "pro" && !byId("calculatorTab").classList.contains("hidden")) {
     populateProjects();
   }
+}
+
+function canEditSetup() {
+  return state.plan === "pro" || (state.admin && state.editShared);
+}
+
+function guardSetupEdits() {
+  ["cabinetStandardsTab", "materialSetupTab", "laborSetupTab"].forEach((id) => {
+    const panel = byId(id);
+    if (!panel) {
+      return;
+    }
+    panel.addEventListener("click", (event) => {
+      if (canEditSetup()) {
+        return;
+      }
+      const target = event.target.closest("button, input[data-standard-type]");
+      if (!target || target.classList.contains("sub-tab-btn")) {
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      openPaywall();
+    }, true);
+  });
 }
 
 function listenForWixMember() {
@@ -1472,10 +1490,6 @@ function applyStandardMaterials() {
 }
 
 function switchTab(tabName) {
-  if (tabName !== "calculator" && state.plan !== "pro") {
-    openPaywall();
-    return;
-  }
   const isCalc = tabName === "calculator";
   const isStandards = tabName === "cabinetStandards";
   const isMaterial = tabName === "material";
@@ -3669,6 +3683,8 @@ async function hydratePlanBanner() {
 }
 
 function bindUiEvents() {
+  guardSetupEdits();
+
   byId("lowerTopType").addEventListener("change", () => {
     toggleStretcherField();
     calculate();

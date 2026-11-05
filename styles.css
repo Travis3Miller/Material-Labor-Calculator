@@ -144,6 +144,19 @@ h1 {
   font-weight: 700;
 }
 
+.setup-upgrade-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--accent-light-alt);
+  font-weight: 700;
+}
+
+.setup-upgrade-note[hidden] {
+  display: none;
+}
+
 .shared-defaults-toggle {
   display: flex;
   align-items: center;

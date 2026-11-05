@@ -211,3 +211,18 @@ test("only admins can edit the shared default catalog everyone else reads", asyn
   assert.ok(free.materials.some((item) => item.name === "Shared default plywood"));
   delete process.env.ADMIN_MEMBER_IDS;
 });
+
+test("admin can also be recognized by email", async () => {
+  process.env.ADMIN_EMAILS = "Owner@Example.com";
+  const login = (externalMemberId, email) => fetch(`${baseUrl}/api/auth/wix/bridge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-wix-bridge-secret": "test-bridge-secret" },
+    body: JSON.stringify({ externalMemberId, email })
+  }).then((response) => response.json());
+  const config = async (token) => (await fetch(`${baseUrl}/api/config`, {
+    headers: { Authorization: "Bearer " + token }
+  })).json();
+  assert.equal((await config((await login("m-owner", "owner@example.com")).sessionToken)).admin, true);
+  assert.equal((await config((await login("m-other", "other@example.com")).sessionToken)).admin, undefined);
+  delete process.env.ADMIN_EMAILS;
+});
