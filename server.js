@@ -84,8 +84,20 @@ function adminMemberIds() {
     .filter(Boolean));
 }
 
+function adminEmails() {
+  return new Set(String(process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean));
+}
+
 function isAdmin(req) {
-  return Boolean(req.currentUser && adminMemberIds().has(req.currentUser.sub));
+  const user = req.currentUser;
+  if (!user) {
+    return false;
+  }
+  const email = String(user.email || "").trim().toLowerCase();
+  return adminMemberIds().has(user.sub) || Boolean(email && adminEmails().has(email));
 }
 
 function paidPlanIds() {
