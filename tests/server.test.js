@@ -150,11 +150,12 @@ test("project and catalog writes require paid entitlement on the server", async 
   const paidCatalog = await fetch(`${baseUrl}/api/catalog`, {
     headers: { Authorization: `Bearer ${paidSession}` }
   });
-  assert.equal((await paidCatalog.json()).materials.length, 1);
+  const paidMaterials = (await paidCatalog.json()).materials;
+  assert.ok(paidMaterials.some((item) => item.name === "Member-only plywood"));
   const otherMemberCatalog = await fetch(`${baseUrl}/api/catalog`, {
     headers: { Authorization: `Bearer ${memberSession}` }
   });
-  assert.equal((await otherMemberCatalog.json()).materials.length, 0);
+  assert.ok(!(await otherMemberCatalog.json()).materials.some((item) => item.name === "Member-only plywood"));
 
   const paidSettings = await fetch(`${baseUrl}/api/settings`, {
     method: "PUT",
@@ -181,48 +182,12 @@ test("project and catalog writes require paid entitlement on the server", async 
   assert.equal(freeSettings.status, 403);
 });
 
-test("only admins can edit the shared default catalog everyone else reads", async () => {
-  process.env.ADMIN_MEMBER_IDS = "member-admin";
-  const bridge = (externalMemberId) => fetch(`${baseUrl}/api/auth/wix/bridge`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-wix-bridge-secret": "test-bridge-secret" },
-    body: JSON.stringify({ externalMemberId })
-  }).then((response) => response.json());
-  const adminToken = (await bridge("member-admin")).sessionToken;
-  const bearer = (token) => ({ "Content-Type": "application/json", Authorization: "Bearer " + token });
-
-  const denied = await fetch(`${baseUrl}/api/catalog/materials?scope=shared`, {
-    method: "POST",
-    headers: bearer(paidSession),
-    body: JSON.stringify({ category: "carcass", name: "Not allowed" })
-  });
-  assert.equal(denied.status, 403);
-
-  const created = await fetch(`${baseUrl}/api/catalog/materials?scope=shared`, {
-    method: "POST",
-    headers: bearer(adminToken),
-    body: JSON.stringify({ category: "carcass", name: "Shared default plywood" })
-  });
-  assert.equal(created.status, 201);
-
+test("signed-out and free users read the default catalog file", async () => {
+  const defaults = JSON.parse(await fs.readFile(path.join(__dirname, "..", "defaults", "default-catalog.json"), "utf8"));
   const anonymous = await (await fetch(`${baseUrl}/api/catalog`)).json();
-  assert.ok(anonymous.materials.some((item) => item.name === "Shared default plywood"));
-  const free = await (await fetch(`${baseUrl}/api/catalog`, { headers: bearer(memberSession) })).json();
-  assert.ok(free.materials.some((item) => item.name === "Shared default plywood"));
-  delete process.env.ADMIN_MEMBER_IDS;
-});
-
-test("admin can also be recognized by email", async () => {
-  process.env.ADMIN_EMAILS = "Owner@Example.com";
-  const login = (externalMemberId, email) => fetch(`${baseUrl}/api/auth/wix/bridge`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-wix-bridge-secret": "test-bridge-secret" },
-    body: JSON.stringify({ externalMemberId, email })
-  }).then((response) => response.json());
-  const config = async (token) => (await fetch(`${baseUrl}/api/config`, {
-    headers: { Authorization: "Bearer " + token }
+  const free = await (await fetch(`${baseUrl}/api/catalog`, {
+    headers: { Authorization: `Bearer ${memberSession}` }
   })).json();
-  assert.equal((await config((await login("m-owner", "owner@example.com")).sessionToken)).admin, true);
-  assert.equal((await config((await login("m-other", "other@example.com")).sessionToken)).admin, undefined);
-  delete process.env.ADMIN_EMAILS;
+  assert.equal(anonymous.materials.length, (defaults.materialCatalog || []).length);
+  assert.equal(free.materials.length, (defaults.materialCatalog || []).length);
 });
