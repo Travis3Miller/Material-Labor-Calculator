@@ -493,10 +493,11 @@ function normalizeStore(store, { shared = false } = {}) {
     { id: "default-wood-glue", name: "Wood Glue", purchasePrice: 35, purchaseQty: 1, purchaseUnit: "Gallons", phases: ["build"], rules: [{ amount: 1, unit: "Pint", per: 25, driver: "cabinetLf", style: "all" }] },
     { id: "default-senco-staples", name: "Senco Staples", purchasePrice: 40, purchaseQty: 5000, purchaseUnit: "Pieces", phases: ["build"], rules: [{ amount: 30, unit: "Pieces", per: 1, driver: "cabinet", style: "frameless" }, { amount: 45, unit: "Pieces", per: 1, driver: "cabinet", style: "faceFrame" }] },
     { id: "default-sandpaper-discs", name: "Sandpaper Discs", purchasePrice: 30, purchaseQty: 100, purchaseUnit: "Pieces", phases: ["build", "finish"], rules: [{ amount: 15, unit: "Pieces", per: 45, driver: "cabinetLf", style: "all" }] },
-    { id: "default-pin-nails", name: "Pin Nails", purchasePrice: 30, purchaseQty: 5000, purchaseUnit: "Pieces", phases: ["build"], rules: [{ amount: 20, unit: "Pieces", per: 1, driver: "cabinet", style: "all" }] },
-    { id: "default-cabinet-screws", name: "Cabinet Screws", purchasePrice: 25, purchaseQty: 1000, purchaseUnit: "Pieces", phases: ["install"], rules: [{ amount: 8, unit: "Pieces", per: 1, driver: "cabinet", style: "all" }] },
+    { id: "default-staples", name: "Staples", purchasePrice: 30, purchaseQty: 5000, purchaseUnit: "Pieces", phases: ["build"], rules: [{ amount: 25, unit: "Pieces", per: 1, driver: "cabinet", style: "frameless" }, { amount: 40, unit: "Pieces", per: 1, driver: "cabinet", style: "faceFrame" }] },
+    { id: "default-cabinet-screws", name: "Cabinet Screws (Install)", purchasePrice: 50, purchaseQty: 1000, purchaseUnit: "Pieces", phases: ["install"], rules: [{ amount: 6, unit: "Pieces", per: 1, driver: "cabinet", style: "all" }] },
+    { id: "default-build-screws", name: "Cabinet Screws (Build)", purchasePrice: 50, purchaseQty: 5000, purchaseUnit: "Pieces", phases: ["build"], rules: [{ amount: 16, unit: "Pieces", per: 1, driver: "cabinet", style: "all" }] },
     { id: "default-masking-paper", name: "Masking Paper", purchasePrice: 25, purchaseQty: 1000, purchaseUnit: "Lineal Feet", phases: ["finish"], rules: [{ amount: 4, unit: "Lineal Feet", per: 1, driver: "door", style: "all" }] },
-    { id: "default-paint-brushes", name: "Paint Brushes", purchasePrice: 60, purchaseQty: 12, purchaseUnit: "Pieces", phases: ["finish"], rules: [{ amount: 1, unit: "Pieces", per: 100, driver: "cabinetLf", style: "all" }] }
+    { id: "default-paint-brushes", name: "Paint Brushes", purchasePrice: 30, purchaseQty: 12, purchaseUnit: "Pieces", phases: ["finish"], rules: [{ amount: 1, unit: "Pieces", per: 50, driver: "cabinetLf", style: "all" }] }
   ];
   const defaultConstructionAssumptions = [
     {
@@ -570,6 +571,12 @@ function normalizeStore(store, { shared = false } = {}) {
   const hingeTypeCatalog = mergeDefaults(store.hingeTypeCatalog, defaultsVersion < 2 ? defaultHingeTypes : []);
   const basePlateTypeCatalog = mergeDefaults(store.basePlateTypeCatalog, defaultsVersion < 2 ? defaultBasePlateTypes : []);
   const crownMouldingCatalog = mergeDefaults(store.crownMouldingCatalog, defaultsVersion < 1 ? defaultCrownMouldings : []);
+  // Version 7 revised the starter consumables that shipped in version 6.
+  const refreshedConsumables = defaultsVersion === 6 && Array.isArray(store.consumableCatalog)
+    ? store.consumableCatalog
+      .filter((item) => item.id !== "default-pin-nails")
+      .map((item) => defaultConsumables.find((def) => def.id === item.id && ["default-cabinet-screws", "default-paint-brushes"].includes(def.id)) || item)
+    : store.consumableCatalog;
   const edgeBandingCatalog = mergeDefaults(store.edgeBandingCatalog, defaultsVersion < 4 ? defaultEdgeBandings : []);
   const constructionAssumptionCatalog = Array.isArray(store.constructionAssumptionCatalog) ? store.constructionAssumptionCatalog : [];
   const mergedConstructionAssumptions = defaultConstructionAssumptions.map((item) => {
@@ -589,7 +596,7 @@ function normalizeStore(store, { shared = false } = {}) {
   });
 
   return {
-    catalogDefaultsVersion: 6,
+    catalogDefaultsVersion: 7,
     sharedCabinetDefaultsVersion: shared ? 2 : store.sharedCabinetDefaultsVersion,
     projects: Array.isArray(store.projects) ? store.projects : [],
     settings: store.settings && typeof store.settings === "object" && !Array.isArray(store.settings)
@@ -605,7 +612,7 @@ function normalizeStore(store, { shared = false } = {}) {
     boardStockCatalog,
     crownMouldingCatalog,
     edgeBandingCatalog,
-    consumableCatalog: mergeDefaults(store.consumableCatalog, defaultsVersion < 6 ? defaultConsumables : []),
+    consumableCatalog: mergeDefaults(refreshedConsumables, defaultsVersion < 7 ? defaultConsumables : []),
     constructionAssumptionCatalog: mergedConstructionAssumptions
   };
 }

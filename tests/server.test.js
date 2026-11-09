@@ -426,7 +426,7 @@ test("only admins can edit the shared default catalog everyone else reads", asyn
 
   const anonymous = await (await fetch(`${baseUrl}/api/catalog`)).json();
   assert.ok(anonymous.materials.some((item) => item.name === "Shared default plywood"));
-  assert.ok(["Wood Glue", "Senco Staples", "Sandpaper Discs"].every((name) => anonymous.consumables.some((item) => item.name === name)));
+  assert.ok(["Wood Glue", "Senco Staples", "Staples", "Cabinet Screws (Build)", "Cabinet Screws (Install)"].every((name) => anonymous.consumables.some((item) => item.name === name)) && !anonymous.consumables.some((item) => item.id === "default-pin-nails"));
   const free = await (await fetch(`${baseUrl}/api/catalog`, { headers: bearer(memberSession) })).json();
   assert.ok(free.materials.some((item) => item.name === "Shared default plywood"));
   const sharedAssumption = anonymous.constructionAssumptions.find((item) => item.type === "frameless");
