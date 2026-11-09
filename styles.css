@@ -563,6 +563,16 @@ button.danger:hover {
   font-size: 0.84rem;
 }
 
+.drawer-unit-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-unit-toggle input {
+  margin: 0;
+}
+
 .drawer-set-footer {
   display: flex;
   justify-content: flex-end;
@@ -794,4 +804,33 @@ button.danger:hover {
 
 .plan-link:hover {
   text-decoration: underline;
+}
+
+.consumable-phases {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.consumable-phases strong {
+  width: 100%;
+}
+
+.inline-check {
+  flex-direction: row;
+  align-items: center;
+  display: inline-flex;
+  gap: 0.35rem;
+  width: auto;
+}
+
+.inline-check input {
+  width: auto;
+}
+
+.button-row {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
 }

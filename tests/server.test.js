@@ -388,6 +388,42 @@ test("only admins can edit the shared default catalog everyone else reads", asyn
   });
   assert.equal(deletedEdgeBanding.status, 204);
 
+  const consumableBody = {
+    name: "Wood Glue",
+    purchasePrice: 35,
+    purchaseQty: 1,
+    purchaseUnit: "Gallons",
+    phases: ["build"],
+    rules: [{ amount: 1, unit: "Pint", per: 25, driver: "cabinetLf", style: "all" }]
+  };
+  const badConsumable = await fetch(`${baseUrl}/api/catalog/consumables?scope=shared`, {
+    method: "POST",
+    headers: bearer(adminToken),
+    body: JSON.stringify({ ...consumableBody, rules: [{ ...consumableBody.rules[0], unit: "Pieces" }] })
+  });
+  assert.equal(badConsumable.status, 400);
+  const consumableResponse = await fetch(`${baseUrl}/api/catalog/consumables?scope=shared`, {
+    method: "POST",
+    headers: bearer(adminToken),
+    body: JSON.stringify(consumableBody)
+  });
+  assert.equal(consumableResponse.status, 201);
+  const consumable = await consumableResponse.json();
+  const sharedWithConsumable = await (await fetch(`${baseUrl}/api/catalog`)).json();
+  assert.ok(sharedWithConsumable.consumables.some((item) => item.id === consumable.id));
+  const updatedConsumable = await fetch(`${baseUrl}/api/catalog/consumables/${consumable.id}?scope=shared`, {
+    method: "PUT",
+    headers: bearer(adminToken),
+    body: JSON.stringify({ ...consumableBody, phases: ["build", "finish"] })
+  });
+  assert.equal(updatedConsumable.status, 200);
+  assert.deepEqual((await updatedConsumable.json()).phases, ["build", "finish"]);
+  const deletedConsumable = await fetch(`${baseUrl}/api/catalog/consumables/${consumable.id}?scope=shared`, {
+    method: "DELETE",
+    headers: bearer(adminToken)
+  });
+  assert.equal(deletedConsumable.status, 204);
+
   const anonymous = await (await fetch(`${baseUrl}/api/catalog`)).json();
   assert.ok(anonymous.materials.some((item) => item.name === "Shared default plywood"));
   const free = await (await fetch(`${baseUrl}/api/catalog`, { headers: bearer(memberSession) })).json();

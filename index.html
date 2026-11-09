@@ -227,9 +227,13 @@
             <div class="drawer-sets-head">
               <h4>Drawer Sets</h4>
             </div>
+            <label id="drawerInchesWrap" class="drawer-unit-toggle">
+              <input id="drawerInchesInput" type="checkbox">
+              Enter drawer widths in inches
+            </label>
             <div id="drawerSetsWrap" class="list-grid"></div>
             <button id="addDrawerSetBtn" type="button" class="secondary">Add Additional Drawer Height</button>
-            <p class="help compact">Top drawer lineal inches prefill from lower LF x 12; middle and bottom start at 0. Adjust each to match the job.</p>
+            <p class="help compact">For each drawer type, add the widths of all corresponding drawer fronts. Top drawer width prefills from lower cabinet lineal feet; middle and bottom start at 0. Adjust each to match the job.</p>
           </div>
         </div>
 
@@ -376,6 +380,7 @@
           <button id="mouldingTabBtn" type="button" class="sub-tab-btn">Moulding</button>
           <button id="edgeBandingTabBtn" type="button" class="sub-tab-btn">Edgebanding</button>
           <button id="accessoriesTabBtn" type="button" class="sub-tab-btn">Accessories</button>
+          <button id="consumablesTabBtn" type="button" class="sub-tab-btn">Production Consumables</button>
           <button id="defaultsTabBtn" type="button" class="sub-tab-btn">Defaults</button>
         </div>
 
@@ -682,6 +687,106 @@
                 </tr>
               </thead>
               <tbody id="accessoryTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="consumablesTab" class="sub-tab-panel hidden">
+          <div class="grid material-grid">
+            <div class="input-group">
+              <h3 id="consumableFormTitle">Create Production Consumable</h3>
+              <label>Consumable Name
+                <input id="newConsumableName" type="text" placeholder="Wood Glue">
+              </label>
+              <div class="form-row">
+                <label>Purchase Price ($)
+                  <input id="newConsumablePrice" type="number" min="0" step="0.01" value="35">
+                </label>
+                <label>Purchase Quantity
+                  <input id="newConsumablePurchaseQty" type="number" min="0.0001" step="any" value="1">
+                </label>
+                <label>Purchase Unit
+                  <select id="newConsumablePurchaseUnit">
+                    <option>Pint</option>
+                    <option selected>Gallons</option>
+                    <option>Pieces</option>
+                    <option>Lineal Feet</option>
+                    <option>Square Feet</option>
+                  </select>
+                </label>
+              </div>
+              <p class="help compact">Example: $35 for 1 Gallon of glue, or $40 for 5,000 Pieces of staples.</p>
+              <div class="consumable-phases">
+                <strong>Used During Phase</strong>
+                <label class="inline-check"><input id="newConsumablePhaseBuild" type="checkbox" checked> Build</label>
+                <label class="inline-check"><input id="newConsumablePhaseFinish" type="checkbox"> Finish</label>
+                <label class="inline-check"><input id="newConsumablePhaseInstall" type="checkbox"> Install</label>
+              </div>
+            </div>
+
+            <div class="input-group">
+              <h3>Usage Rules</h3>
+              <div class="form-row">
+                <label>Amount Used
+                  <input id="newConsumableRuleAmount" type="number" min="0" step="any" value="1">
+                </label>
+                <label>Unit
+                  <select id="newConsumableRuleUnit">
+                    <option selected>Pint</option>
+                    <option>Gallons</option>
+                    <option>Pieces</option>
+                    <option>Lineal Feet</option>
+                    <option>Square Feet</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Per (quantity)
+                  <input id="newConsumableRulePer" type="number" min="0.0001" step="any" value="25">
+                </label>
+                <label>Of
+                  <select id="newConsumableRuleDriver">
+                    <option value="cabinetLf">Lineal Feet of Cabinets</option>
+                    <option value="lowerLf">Lineal Feet of Lowers</option>
+                    <option value="upperLf">Lineal Feet of Uppers</option>
+                    <option value="tallLf">Lineal Feet of Talls</option>
+                    <option value="doorSqFt">Square Feet of Doors</option>
+                    <option value="drawer">Drawers</option>
+                    <option value="door">Doors</option>
+                    <option value="filler">Fillers</option>
+                    <option value="cabinet">Cabinets</option>
+                  </select>
+                </label>
+              </div>
+              <label>Build Style
+                <select id="newConsumableRuleStyle">
+                  <option value="all" selected>All Build Styles</option>
+                  <option value="frameless">Frameless / Euro</option>
+                  <option value="faceFrame">Face Frame</option>
+                </select>
+              </label>
+              <p class="help compact">Cabinets = total cabinet lineal feet ÷ average cabinet box width. Example: 30 Pieces per 1 Cabinet for Frameless, 45 for Face Frame.</p>
+              <button id="addConsumableRuleBtn" type="button" class="secondary">Add Usage Rule</button>
+              <div id="newConsumableRuleList" class="list-grid"></div>
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="addConsumableBtn" type="button">Create Consumable</button>
+            <button id="cancelConsumableEditBtn" type="button" class="secondary hidden">Cancel Edit</button>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Consumable</th>
+                  <th>Purchase</th>
+                  <th>Phases</th>
+                  <th>Usage</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="consumableTableBody"></tbody>
             </table>
           </div>
         </div>

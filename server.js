@@ -596,7 +596,59 @@ function normalizeStore(store, { shared = false } = {}) {
     boardStockCatalog,
     crownMouldingCatalog,
     edgeBandingCatalog,
+    consumableCatalog: Array.isArray(store.consumableCatalog) ? store.consumableCatalog : [],
     constructionAssumptionCatalog: mergedConstructionAssumptions
+  };
+}
+
+const CONSUMABLE_UNITS = {
+  Pint: "volume",
+  Gallons: "volume",
+  Pieces: "count",
+  "Lineal Feet": "length",
+  "Square Feet": "area"
+};
+const CONSUMABLE_DRIVERS = ["cabinetLf", "lowerLf", "upperLf", "tallLf", "doorSqFt", "drawer", "door", "filler", "cabinet"];
+const CONSUMABLE_STYLES = ["all", "frameless", "faceFrame"];
+const CONSUMABLE_PHASES = ["build", "finish", "install"];
+
+function sanitizeConsumable(body) {
+  const { name, purchasePrice, purchaseQty, purchaseUnit, phases, rules } = body || {};
+  const price = Number(purchasePrice);
+  const qty = Number(purchaseQty);
+  if (typeof name !== "string" || !name.trim()) {
+    return { error: "Consumable name is required." };
+  }
+  if (!Number.isFinite(price) || price < 0 || !Number.isFinite(qty) || qty <= 0 || !CONSUMABLE_UNITS[purchaseUnit]) {
+    return { error: "Enter a valid purchase price, quantity, and unit." };
+  }
+  const cleanPhases = Array.isArray(phases) ? CONSUMABLE_PHASES.filter((p) => phases.includes(p)) : [];
+  if (!cleanPhases.length) {
+    return { error: "Select at least one phase (Build, Finish, Install)." };
+  }
+  if (!Array.isArray(rules) || !rules.length) {
+    return { error: "Add at least one usage rule." };
+  }
+  const cleanRules = [];
+  for (const rule of rules) {
+    const amount = Number(rule && rule.amount);
+    const per = Number(rule && rule.per);
+    if (!rule || !Number.isFinite(amount) || amount < 0 || !Number.isFinite(per) || per <= 0
+      || !CONSUMABLE_UNITS[rule.unit] || CONSUMABLE_UNITS[rule.unit] !== CONSUMABLE_UNITS[purchaseUnit]
+      || !CONSUMABLE_DRIVERS.includes(rule.driver) || !CONSUMABLE_STYLES.includes(rule.style)) {
+      return { error: "Each usage rule needs a valid amount, unit matching the purchase unit type, per-quantity, and driver." };
+    }
+    cleanRules.push({ amount, unit: rule.unit, per, driver: rule.driver, style: rule.style });
+  }
+  return {
+    value: {
+      name: name.trim(),
+      purchasePrice: price,
+      purchaseQty: qty,
+      purchaseUnit,
+      phases: cleanPhases,
+      rules: cleanRules
+    }
   };
 }
 
@@ -685,6 +737,7 @@ app.get("/api/catalog", async (req, res) => {
       boardStocks: store.boardStockCatalog,
       crownMouldings: store.crownMouldingCatalog,
       edgeBandings: store.edgeBandingCatalog,
+      consumables: store.consumableCatalog,
       constructionAssumptions: store.constructionAssumptionCatalog
     });
   } catch (err) {
@@ -1417,6 +1470,56 @@ app.delete("/api/catalog/edge-bandings/:id", async (req, res) => {
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Could not delete edgebanding." });
+  }
+});
+
+app.post("/api/catalog/consumables", async (req, res) => {
+  try {
+    const { value, error } = sanitizeConsumable(req.body);
+    if (error) {
+      return res.status(400).json({ error });
+    }
+    const store = await readStore(req);
+    const item = { id: newId(), ...value };
+    store.consumableCatalog.push(item);
+    await writeStore(req, store);
+    res.status(201).json(item);
+  } catch (err) {
+    res.status(500).json({ error: "Could not save consumable." });
+  }
+});
+
+app.put("/api/catalog/consumables/:id", async (req, res) => {
+  try {
+    const store = await readStore(req);
+    const idx = store.consumableCatalog.findIndex((item) => item.id === req.params.id);
+    if (idx < 0) {
+      return res.status(404).json({ error: "Consumable not found." });
+    }
+    const { value, error } = sanitizeConsumable(req.body);
+    if (error) {
+      return res.status(400).json({ error });
+    }
+    store.consumableCatalog[idx] = { ...store.consumableCatalog[idx], ...value };
+    await writeStore(req, store);
+    res.json(store.consumableCatalog[idx]);
+  } catch (err) {
+    res.status(500).json({ error: "Could not update consumable." });
+  }
+});
+
+app.delete("/api/catalog/consumables/:id", async (req, res) => {
+  try {
+    const store = await readStore(req);
+    const before = store.consumableCatalog.length;
+    store.consumableCatalog = store.consumableCatalog.filter((item) => item.id !== req.params.id);
+    if (store.consumableCatalog.length === before) {
+      return res.status(404).json({ error: "Consumable not found." });
+    }
+    await writeStore(req, store);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: "Could not delete consumable." });
   }
 });
 

@@ -37,8 +37,11 @@ const state = {
     basePlateTypes: [],
     boardStocks: [],
     crownMouldings: [],
-    edgeBandings: []
+    edgeBandings: [],
+    consumables: []
   },
+  pendingConsumableRules: [],
+  editingConsumableId: "",
   jobAccessories: [],
   dataMode: "unknown",
   plan: "free",
@@ -972,6 +975,7 @@ function normalizeCatalog(catalog) {
     boardStocks: Array.isArray(catalog.boardStocks) ? catalog.boardStocks : [],
     crownMouldings: Array.isArray(catalog.crownMouldings) ? catalog.crownMouldings : [],
     edgeBandings: Array.isArray(catalog.edgeBandings) ? catalog.edgeBandings : [],
+    consumables: Array.isArray(catalog.consumables) ? catalog.consumables : [],
     constructionAssumptions: Array.isArray(catalog.constructionAssumptions) ? catalog.constructionAssumptions : []
   };
 }
@@ -1272,9 +1276,23 @@ function defaultDrawerLinealInches() {
   return Math.max(0, toNumber(byId("lowerLF").value) * 12);
 }
 
+function drawerWidthLabel(position, inInches) {
+  const units = inInches ? "inches" : "feet";
+  return position
+    ? `Total lineal ${units} of all ${position} drawers`
+    : `Total lineal ${units} of drawer fronts in this set`;
+}
+
+function displayDrawerWidth(linealInches, inInches) {
+  const value = inInches ? linealInches : linealInches / 12;
+  return String(Number(value.toFixed(10)));
+}
+
 function drawerSetRowTemplate(set) {
+  const inInches = byId("drawerInchesInput").checked;
+  const displayValue = displayDrawerWidth(set.linealInches, inInches);
   return `
-    <div class="drawer-set-row" data-drawer-set-id="${set.id}" data-user-overridden="${set.userOverridden ? "true" : "false"}">
+    <div class="drawer-set-row" data-drawer-set-id="${set.id}" data-position="${set.position}" data-lineal-inches="${set.linealInches}" data-display-value="${displayValue}" data-user-overridden="${set.userOverridden ? "true" : "false"}">
       <div class="drawer-set-grid">
         <label>Set Name
           <input class="drawer-set-name" type="text" value="${set.name}">
@@ -1282,8 +1300,8 @@ function drawerSetRowTemplate(set) {
         <label>Height (3-30 in)
           <input class="drawer-set-height" type="number" min="3" max="30" step="1" value="${set.height}">
         </label>
-        <label>Lineal Inches
-          <input class="drawer-set-lineal" type="number" min="0" step="0.01" value="${set.linealInches}">
+        <label><span class="drawer-set-lineal-label">${drawerWidthLabel(set.position, inInches)}</span>
+          <input class="drawer-set-lineal" type="number" min="0" step="any" value="${displayValue}">
         </label>
       </div>
       <div class="drawer-set-footer">
@@ -1294,9 +1312,11 @@ function drawerSetRowTemplate(set) {
 }
 
 function createDrawerSet(overrides = {}) {
+  const inferredPosition = { "Top Drawer": "top", "Middle Drawer": "middle", "Bottom Drawer": "bottom" }[overrides.name];
   return {
     id: overrides.id || newId(),
     name: overrides.name || "Drawer Set",
+    position: ["top", "middle", "bottom"].includes(overrides.position) ? overrides.position : (inferredPosition || ""),
     height: overrides.height !== undefined ? overrides.height : 5,
     linealInches: overrides.linealInches !== undefined ? overrides.linealInches : defaultDrawerLinealInches(),
     userOverridden: overrides.userOverridden === true
@@ -1341,6 +1361,7 @@ function handleDrawerModeChange() {
   byId("drawerDepth").disabled = !hasDrawers;
   byId("addDrawerSetBtn").disabled = !hasDrawers;
   byId("drawerSetsWrap").classList.toggle("hidden", !hasDrawers);
+  byId("drawerInchesWrap").classList.toggle("hidden", !hasDrawers);
   byId("addDrawerSetBtn").classList.toggle("hidden", !hasDrawers);
 
   if (!hasDrawers) {
@@ -1351,15 +1372,18 @@ function handleDrawerModeChange() {
   }
 }
 
-function collectDrawerSets() {
+function collectDrawerSets(inInches = byId("drawerInchesInput").checked) {
   const rows = Array.from(document.querySelectorAll("[data-drawer-set-id]"));
   return rows.map((row) => {
     const linealInput = row.querySelector(".drawer-set-lineal");
-    const linealValue = Math.max(0, toNumber(linealInput.value));
+    const linealValue = linealInput.value === row.dataset.displayValue
+      ? toNumber(row.dataset.linealInches)
+      : Math.max(0, toNumber(linealInput.value)) * (inInches ? 1 : 12);
 
     return {
       id: row.dataset.drawerSetId,
       name: row.querySelector(".drawer-set-name").value || "Drawer Set",
+      position: row.dataset.position,
       height: Math.min(30, Math.max(3, toNumber(row.querySelector(".drawer-set-height").value))),
       linealInches: linealValue,
       userOverridden: row.dataset.userOverridden === "true"
@@ -1379,7 +1403,9 @@ function refreshAutoDrawerLineal() {
     const linealInput = row.querySelector(".drawer-set-lineal");
     const isOverridden = row.dataset.userOverridden === "true";
     if (!isOverridden || !linealInput.value) {
-      linealInput.value = String(round2(defaultLineal));
+      row.dataset.linealInches = String(defaultLineal);
+      linealInput.value = displayDrawerWidth(defaultLineal, byId("drawerInchesInput").checked);
+      row.dataset.displayValue = linealInput.value;
     }
   });
 }
@@ -1534,6 +1560,7 @@ function collectSettings() {
     totalDrawerCount: hasDrawers ? Math.max(0, toNumber(byId("howManyDrawers").value)) : 0,
     totalDoorCount: Math.max(0, toNumber(byId("totalDoorCount").value)),
     drawerDepth: Math.max(1, toNumber(byId("drawerDepth").value)),
+    drawerWidthsInInches: byId("drawerInchesInput").checked,
     drawerSets: hasDrawers ? collectDrawerSets() : [],
     jobAccessories: state.jobAccessories,
     wasteFactorPercent: Math.max(0, toNumber(byId("wasteFactorPercent").value)),
@@ -1601,6 +1628,7 @@ function applyProject(project) {
     howManyDrawers: settings.totalDrawerCount,
     totalDoorCount: settings.totalDoorCount,
     drawerDepth: settings.drawerDepth,
+    drawerInchesInput: settings.drawerWidthsInInches === true,
     wasteFactorPercent: settings.wasteFactorPercent,
     buildLfPerHour: settings.buildLfPerHour,
     installLfPerHour: settings.installLfPerHour,
@@ -1754,6 +1782,7 @@ function switchMaterialSubTab(tabName) {
     moulding: "mouldingTab",
     edgeBanding: "edgeBandingTab",
     accessories: "accessoriesTab",
+    consumables: "consumablesTab",
     defaults: "defaultsTab"
   };
 
@@ -2541,6 +2570,7 @@ async function refreshCatalogUi() {
   renderMouldingTable();
   renderEdgeBandingTable();
   renderAccessoryTable();
+  renderConsumableTable();
   renderDefaultsUi();
   renderJobAccessoryList();
   calculate();
@@ -3099,6 +3129,274 @@ async function deleteSlide(id) {
     saveLocalCatalog(catalog);
   }
 
+  await refreshCatalogUi();
+}
+
+const CONSUMABLE_UNIT_INFO = {
+  Pint: { type: "volume", factor: 1 },
+  Gallons: { type: "volume", factor: 8 },
+  Pieces: { type: "count", factor: 1 },
+  "Lineal Feet": { type: "length", factor: 1 },
+  "Square Feet": { type: "area", factor: 1 }
+};
+
+const CONSUMABLE_DRIVER_LABELS = {
+  cabinetLf: "LF of Cabinets",
+  lowerLf: "LF of Lowers",
+  upperLf: "LF of Uppers",
+  tallLf: "LF of Talls",
+  doorSqFt: "Sq Ft of Doors",
+  drawer: "Drawer(s)",
+  door: "Door(s)",
+  filler: "Filler(s)",
+  cabinet: "Cabinet(s)"
+};
+
+const CONSUMABLE_STYLE_LABELS = {
+  all: "All Styles",
+  frameless: "Frameless / Euro",
+  faceFrame: "Face Frame"
+};
+
+const CONSUMABLE_PHASE_LABELS = { build: "Build", finish: "Finish", install: "Install" };
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+function formatConsumableQty(value) {
+  return String(Math.round(value * 100) / 100);
+}
+
+function calcConsumableLines(consumables, ctx) {
+  return (consumables || []).reduce((lines, item) => {
+    const purchaseInfo = CONSUMABLE_UNIT_INFO[item.purchaseUnit];
+    const phases = Array.isArray(item.phases) ? item.phases : [];
+    if (!purchaseInfo || !(item.purchaseQty > 0) || !phases.some((phase) => ctx.phases[phase])) {
+      return lines;
+    }
+    let baseUsed = 0;
+    (item.rules || []).forEach((rule) => {
+      const info = CONSUMABLE_UNIT_INFO[rule.unit];
+      if (!info || info.type !== purchaseInfo.type || !(rule.per > 0)) {
+        return;
+      }
+      if (rule.style !== "all" && rule.style !== ctx.constructionType) {
+        return;
+      }
+      baseUsed += (rule.amount * info.factor * (ctx.drivers[rule.driver] || 0)) / rule.per;
+    });
+    if (baseUsed <= 0) {
+      return lines;
+    }
+    const qtyInPurchaseUnit = baseUsed / purchaseInfo.factor;
+    lines.push({
+      id: item.id,
+      name: item.name,
+      purchaseUnit: item.purchaseUnit,
+      qtyInPurchaseUnit,
+      cost: (qtyInPurchaseUnit / item.purchaseQty) * (item.purchasePrice || 0)
+    });
+    return lines;
+  }, []);
+}
+
+function consumableRuleText(rule) {
+  return `${formatConsumableQty(rule.amount)} ${rule.unit} per ${formatConsumableQty(rule.per)} ${CONSUMABLE_DRIVER_LABELS[rule.driver] || rule.driver} (${CONSUMABLE_STYLE_LABELS[rule.style] || rule.style})`;
+}
+
+function renderConsumableTable() {
+  const body = byId("consumableTableBody");
+  if (!body) {
+    return;
+  }
+  if (!state.catalog.consumables.length) {
+    body.innerHTML = '<tr><td colspan="5" class="meta">No production consumables added yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = state.catalog.consumables.map((item) => `
+    <tr>
+      <td>${escapeHtml(item.name)}</td>
+      <td>${dollars(item.purchasePrice)} / ${formatConsumableQty(item.purchaseQty)} ${item.purchaseUnit}</td>
+      <td>${(item.phases || []).map((phase) => CONSUMABLE_PHASE_LABELS[phase] || phase).join(", ")}</td>
+      <td>${(item.rules || []).map((rule) => escapeHtml(consumableRuleText(rule))).join("<br>")}</td>
+      <td>
+        <div class="table-actions">
+          <button type="button" class="mini-btn" data-edit-consumable-id="${item.id}">Edit</button>
+          <button type="button" class="mini-btn" data-consumable-id="${item.id}">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderPendingConsumableRules() {
+  const wrap = byId("newConsumableRuleList");
+  if (!state.pendingConsumableRules.length) {
+    wrap.innerHTML = '<p class="meta">No usage rules added yet.</p>';
+    return;
+  }
+  wrap.innerHTML = state.pendingConsumableRules.map((rule, idx) => `
+    <div class="list-item">
+      <div class="list-item-row"><span>${escapeHtml(consumableRuleText(rule))}</span><button type="button" class="mini-btn" data-remove-consumable-rule="${idx}">Remove</button></div>
+    </div>
+  `).join("");
+}
+
+function consumableUnitOptions(type) {
+  return Object.keys(CONSUMABLE_UNIT_INFO).filter((unit) => CONSUMABLE_UNIT_INFO[unit].type === type);
+}
+
+// Usage units must be the same kind of measure as the purchase unit (e.g., pints with gallons).
+function syncConsumableRuleUnits() {
+  const type = CONSUMABLE_UNIT_INFO[byId("newConsumablePurchaseUnit").value].type;
+  const allowed = consumableUnitOptions(type);
+  const select = byId("newConsumableRuleUnit");
+  Array.from(select.options).forEach((opt) => {
+    opt.hidden = !allowed.includes(opt.value);
+    opt.disabled = !allowed.includes(opt.value);
+  });
+  if (!allowed.includes(select.value)) {
+    select.value = allowed[0];
+  }
+  state.pendingConsumableRules = state.pendingConsumableRules.filter((rule) => allowed.includes(rule.unit));
+  renderPendingConsumableRules();
+}
+
+function addConsumableRule() {
+  const amount = toNumber(byId("newConsumableRuleAmount").value);
+  const per = toNumber(byId("newConsumableRulePer").value);
+  if (!(amount >= 0) || !(per > 0)) {
+    alert("Enter a usage amount and a per-quantity greater than zero.");
+    return;
+  }
+  state.pendingConsumableRules.push({
+    amount,
+    unit: byId("newConsumableRuleUnit").value,
+    per,
+    driver: byId("newConsumableRuleDriver").value,
+    style: byId("newConsumableRuleStyle").value
+  });
+  renderPendingConsumableRules();
+}
+
+function resetConsumableForm() {
+  state.editingConsumableId = "";
+  state.pendingConsumableRules = [];
+  byId("newConsumableName").value = "";
+  byId("newConsumablePrice").value = "35";
+  byId("newConsumablePurchaseQty").value = "1";
+  byId("newConsumablePurchaseUnit").value = "Gallons";
+  byId("newConsumablePhaseBuild").checked = true;
+  byId("newConsumablePhaseFinish").checked = false;
+  byId("newConsumablePhaseInstall").checked = false;
+  byId("consumableFormTitle").textContent = "Create Production Consumable";
+  byId("addConsumableBtn").textContent = "Create Consumable";
+  byId("cancelConsumableEditBtn").classList.add("hidden");
+  syncConsumableRuleUnits();
+}
+
+function startEditConsumable(id) {
+  const item = state.catalog.consumables.find((entry) => entry.id === id);
+  if (!item) {
+    return;
+  }
+  state.editingConsumableId = id;
+  byId("newConsumableName").value = item.name;
+  byId("newConsumablePrice").value = String(item.purchasePrice);
+  byId("newConsumablePurchaseQty").value = String(item.purchaseQty);
+  byId("newConsumablePurchaseUnit").value = item.purchaseUnit;
+  byId("newConsumablePhaseBuild").checked = (item.phases || []).includes("build");
+  byId("newConsumablePhaseFinish").checked = (item.phases || []).includes("finish");
+  byId("newConsumablePhaseInstall").checked = (item.phases || []).includes("install");
+  byId("consumableFormTitle").textContent = "Edit Production Consumable";
+  byId("addConsumableBtn").textContent = "Save Consumable";
+  byId("cancelConsumableEditBtn").classList.remove("hidden");
+  syncConsumableRuleUnits();
+  state.pendingConsumableRules = (item.rules || []).map((rule) => ({ ...rule }));
+  renderPendingConsumableRules();
+  byId("newConsumableName").focus();
+}
+
+async function saveConsumable() {
+  const phases = ["build", "finish", "install"].filter((phase) => byId(`newConsumablePhase${phase[0].toUpperCase()}${phase.slice(1)}`).checked);
+  const payload = {
+    name: byId("newConsumableName").value.trim(),
+    purchasePrice: Math.max(0, toNumber(byId("newConsumablePrice").value)),
+    purchaseQty: toNumber(byId("newConsumablePurchaseQty").value),
+    purchaseUnit: byId("newConsumablePurchaseUnit").value,
+    phases,
+    rules: state.pendingConsumableRules.map((rule) => ({ ...rule }))
+  };
+
+  if (!payload.name) {
+    alert("Enter a consumable name.");
+    return;
+  }
+  if (!(payload.purchaseQty > 0)) {
+    alert("Enter a purchase quantity greater than zero.");
+    return;
+  }
+  if (!phases.length) {
+    alert("Select at least one phase (Build, Finish, Install).");
+    return;
+  }
+  if (!payload.rules.length) {
+    alert("Add at least one usage rule.");
+    return;
+  }
+
+  const editingId = state.editingConsumableId;
+  if (await ensureDataMode() === "api") {
+    try {
+      const res = await apiFetch(editingId ? `/api/catalog/consumables/${editingId}` : "/api/catalog/consumables", {
+        method: editingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        throw new Error("Could not save consumable");
+      }
+    } catch (_err) {
+      state.dataMode = "local";
+    }
+  }
+
+  if (state.dataMode === "local") {
+    const catalog = localCatalog();
+    if (editingId) {
+      catalog.consumables = catalog.consumables.map((item) => item.id === editingId ? { ...item, ...payload } : item);
+    } else {
+      catalog.consumables.push({ id: newId(), ...payload });
+    }
+    saveLocalCatalog(catalog);
+  }
+
+  resetConsumableForm();
+  await refreshCatalogUi();
+}
+
+async function deleteConsumable(id) {
+  if (await ensureDataMode() === "api") {
+    try {
+      const res = await apiFetch(`/api/catalog/consumables/${id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 404) {
+        throw new Error("Could not delete consumable");
+      }
+    } catch (_err) {
+      state.dataMode = "local";
+    }
+  }
+
+  if (state.dataMode === "local") {
+    const catalog = localCatalog();
+    catalog.consumables = catalog.consumables.filter((item) => item.id !== id);
+    saveLocalCatalog(catalog);
+  }
+
+  if (state.editingConsumableId === id) {
+    resetConsumableForm();
+  }
   await refreshCatalogUi();
 }
 
@@ -3671,7 +3969,28 @@ function calculate() {
   const accessoryHardwareCost = accessoryLines.reduce((sum, line) => sum + line.lineCost, 0);
   const accessoryTotalCost = accessorySheetGoodsCost + accessoryHardwareCost;
 
-  const totalMaterialCost = cabinetBoxTotalCost + drawerTotalCost + doorTotalCost + accessoryTotalCost + paintCostTotal;
+  const totalCabinetCount = settings.avgWidth > 0 ? (totalCabinetLf * 12) / settings.avgWidth : 0;
+  const consumableLines = calcConsumableLines(state.catalog.consumables, {
+    constructionType: settings.constructionType,
+    phases: { build: settings.includeBuild, finish: settings.includeFinish, install: settings.includeInstall },
+    drivers: {
+      cabinetLf: totalCabinetLf,
+      lowerLf: settings.lowerLF,
+      upperLf: settings.upperLF,
+      tallLf: settings.tallLF,
+      doorSqFt: estimatedDoorSqFt,
+      drawer: settings.totalDrawerCount,
+      door: settings.totalDoorCount,
+      filler: fillerCount,
+      cabinet: totalCabinetCount
+    }
+  });
+  const consumablesTotalCost = consumableLines.reduce((sum, line) => sum + line.cost, 0);
+  const consumableOrderLines = consumableLines.length
+    ? consumableLines.map((line) => `<div class="result-line"><span>${escapeHtml(line.name)}</span><span class="result-value">${formatConsumableQty(line.qtyInPurchaseUnit)} ${line.purchaseUnit} = ${dollars(line.cost)}</span></div>`).join("")
+    : '<div class="result-line"><span>Consumables</span><span class="result-value">None apply to this job</span></div>';
+
+  const totalMaterialCost = cabinetBoxTotalCost + drawerTotalCost + doorTotalCost + accessoryTotalCost + paintCostTotal + consumablesTotalCost;
   const grandTotalCost = totalMaterialCost + totalLaborCost;
 
   byId("resultsGrid").innerHTML = [
@@ -3683,7 +4002,7 @@ function calculate() {
         <h3>Drawers</h3>
         <div class="result-line"><span>Total Drawer Count (slides)</span><span class="result-value">${round2(settings.totalDrawerCount)}</span></div>
         <div class="result-line"><span>Estimated Drawer Count (material)</span><span class="result-value">${round2(drawerTotals.estimatedCount)}</span></div>
-        <div class="result-line"><span>Total Drawer Lineal Inches</span><span class="result-value">${round2(drawerTotals.linealInches)} in</span></div>
+        <div class="result-line"><span>Total Drawer Lineal Feet</span><span class="result-value">${round2(drawerTotals.linealInches / 12)} ft</span></div>
         <div class="result-line"><span>Drawer Box Material</span><span class="result-value">${round2(drawerBoxSqFt)} sq ft</span></div>
         <div class="result-line"><span>Drawer Bottom Material</span><span class="result-value">${round2(drawerBottomSqFt)} sq ft</span></div>
         <div class="result-line"><span>Slides Needed (pairs)</span><span class="result-value">${round2(slidesNeeded)}</span></div>
@@ -3749,6 +4068,9 @@ function calculate() {
 
       <div class="result-line result-separator"><span>Accessories</span><span class="result-value"></span></div>
       ${accessoryOrderLines}
+
+      <div class="result-line result-separator"><span>Production Consumables</span><span class="result-value"></span></div>
+      ${consumableOrderLines}
     </article>
 
     <article class="result-tile">
@@ -3796,6 +4118,13 @@ function calculate() {
     </article>
 
     <article class="result-tile">
+      <h3>Production Consumables Cost Summary</h3>
+      ${consumableLines.map((line) => `<div class="result-line"><span>${escapeHtml(line.name)}</span><span class="result-value">${dollars(line.cost)}</span></div>`).join("")}
+      <div class="result-line result-separator"><span>Consumables Subtotal</span><span class="result-value total">${dollars(consumablesTotalCost)}</span></div>
+      <div class="meta">${consumableLines.length ? `${consumableLines.length} consumable(s) apply to the selected phases.` : "No consumables apply to the selected phases."}</div>
+    </article>
+
+    <article class="result-tile">
       <h3>Labor</h3>
       <div class="result-line"><span>Total LF Used for Labor</span><span class="result-value">${round2(totalLfForLabor)} LF</span></div>
       <div class="result-line"><span>Build Hours</span><span class="result-value">${round2(buildHours)}</span></div>
@@ -3815,6 +4144,7 @@ function calculate() {
       <div class="result-line"><span>Doors</span><span class="result-value">${dollars(doorTotalCost)}</span></div>
       <div class="result-line"><span>Paint</span><span class="result-value">${dollars(paintCostTotal)}</span></div>
       <div class="result-line"><span>Accessories</span><span class="result-value">${dollars(accessoryTotalCost)}</span></div>
+      <div class="result-line"><span>Production Consumables</span><span class="result-value">${dollars(consumablesTotalCost)}</span></div>
       <div class="result-line"><span>Total Labor</span><span class="result-value">${dollars(totalLaborCost)}</span></div>
       <div class="result-line result-separator"><span>Grand Total</span><span class="result-value total">${dollars(grandTotalCost)}</span></div>
     </article>
@@ -4033,6 +4363,11 @@ function bindCalculationInputs() {
 }
 
 function bindDrawerSetEvents() {
+  byId("drawerInchesInput").addEventListener("change", () => {
+    const inInches = byId("drawerInchesInput").checked;
+    renderDrawerSets(collectDrawerSets(!inInches));
+    calculate();
+  });
   byId("addDrawerSetBtn").addEventListener("click", () => {
     if (byId("hasDrawersSelect").value !== "yes") {
       return;
@@ -4133,6 +4468,26 @@ function bindUiEvents() {
   byId("addPanelStockBtn").addEventListener("click", addMaterial);
   byId("addHardwareBtn").addEventListener("click", addHardware);
   byId("addAccessoryBtn").addEventListener("click", addAccessory);
+  byId("addConsumableRuleBtn").addEventListener("click", addConsumableRule);
+  byId("addConsumableBtn").addEventListener("click", saveConsumable);
+  byId("cancelConsumableEditBtn").addEventListener("click", resetConsumableForm);
+  byId("newConsumablePurchaseUnit").addEventListener("change", syncConsumableRuleUnits);
+  byId("newConsumableRuleList").addEventListener("click", (event) => {
+    const idx = event.target.dataset.removeConsumableRule;
+    if (idx !== undefined) {
+      state.pendingConsumableRules.splice(Number(idx), 1);
+      renderPendingConsumableRules();
+    }
+  });
+  byId("consumableTableBody").addEventListener("click", async (event) => {
+    const id = event.target.dataset.consumableId;
+    const editId = event.target.dataset.editConsumableId;
+    if (editId) {
+      startEditConsumable(editId);
+    } else if (id && confirm("Delete this consumable?")) {
+      await deleteConsumable(id);
+    }
+  });
   byId("addDoorStyleBtn").addEventListener("click", addDoorStyle);
   byId("addPaintTypeBtn").addEventListener("click", addPaintType);
   byId("addBoardStockBtn").addEventListener("click", addBoardStock);
@@ -4157,6 +4512,7 @@ function bindUiEvents() {
   byId("mouldingTabBtn").addEventListener("click", () => switchMaterialSubTab("moulding"));
   byId("edgeBandingTabBtn").addEventListener("click", () => switchMaterialSubTab("edgeBanding"));
   byId("accessoriesTabBtn").addEventListener("click", () => switchMaterialSubTab("accessories"));
+  byId("consumablesTabBtn").addEventListener("click", () => switchMaterialSubTab("consumables"));
   byId("defaultsTabBtn").addEventListener("click", () => switchMaterialSubTab("defaults"));
 
   byId("newHardwareUsedFor").addEventListener("change", () => {
@@ -4209,6 +4565,7 @@ async function initialize() {
   toggleStretcherField();
   handleDrawerModeChange();
   switchMaterialSubTab("panelStock");
+  resetConsumableForm();
 
   try {
     await hydratePlanBanner();
