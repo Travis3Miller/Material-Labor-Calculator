@@ -489,6 +489,15 @@ function normalizeStore(store, { shared = false } = {}) {
   const defaultEdgeBandings = [
     { id: "default-alder-edgeband-13-16", name: "13/16 Alder Edgeband Roll", lengthPerRoll: 320, costPerRoll: 60 }
   ];
+  const defaultConsumables = [
+    { id: "default-wood-glue", name: "Wood Glue", purchasePrice: 35, purchaseQty: 1, purchaseUnit: "Gallons", phases: ["build"], rules: [{ amount: 1, unit: "Pint", per: 25, driver: "cabinetLf", style: "all" }] },
+    { id: "default-senco-staples", name: "Senco Staples", purchasePrice: 40, purchaseQty: 5000, purchaseUnit: "Pieces", phases: ["build"], rules: [{ amount: 30, unit: "Pieces", per: 1, driver: "cabinet", style: "frameless" }, { amount: 45, unit: "Pieces", per: 1, driver: "cabinet", style: "faceFrame" }] },
+    { id: "default-sandpaper-discs", name: "Sandpaper Discs", purchasePrice: 30, purchaseQty: 100, purchaseUnit: "Pieces", phases: ["build", "finish"], rules: [{ amount: 15, unit: "Pieces", per: 45, driver: "cabinetLf", style: "all" }] },
+    { id: "default-pin-nails", name: "Pin Nails", purchasePrice: 30, purchaseQty: 5000, purchaseUnit: "Pieces", phases: ["build"], rules: [{ amount: 20, unit: "Pieces", per: 1, driver: "cabinet", style: "all" }] },
+    { id: "default-cabinet-screws", name: "Cabinet Screws", purchasePrice: 25, purchaseQty: 1000, purchaseUnit: "Pieces", phases: ["install"], rules: [{ amount: 8, unit: "Pieces", per: 1, driver: "cabinet", style: "all" }] },
+    { id: "default-masking-paper", name: "Masking Paper", purchasePrice: 25, purchaseQty: 1000, purchaseUnit: "Lineal Feet", phases: ["finish"], rules: [{ amount: 4, unit: "Lineal Feet", per: 1, driver: "door", style: "all" }] },
+    { id: "default-paint-brushes", name: "Paint Brushes", purchasePrice: 60, purchaseQty: 12, purchaseUnit: "Pieces", phases: ["finish"], rules: [{ amount: 1, unit: "Pieces", per: 100, driver: "cabinetLf", style: "all" }] }
+  ];
   const defaultConstructionAssumptions = [
     {
       type: "faceFrame",
@@ -580,7 +589,7 @@ function normalizeStore(store, { shared = false } = {}) {
   });
 
   return {
-    catalogDefaultsVersion: 5,
+    catalogDefaultsVersion: 6,
     sharedCabinetDefaultsVersion: shared ? 2 : store.sharedCabinetDefaultsVersion,
     projects: Array.isArray(store.projects) ? store.projects : [],
     settings: store.settings && typeof store.settings === "object" && !Array.isArray(store.settings)
@@ -596,7 +605,7 @@ function normalizeStore(store, { shared = false } = {}) {
     boardStockCatalog,
     crownMouldingCatalog,
     edgeBandingCatalog,
-    consumableCatalog: Array.isArray(store.consumableCatalog) ? store.consumableCatalog : [],
+    consumableCatalog: mergeDefaults(store.consumableCatalog, defaultsVersion < 6 ? defaultConsumables : []),
     constructionAssumptionCatalog: mergedConstructionAssumptions
   };
 }
