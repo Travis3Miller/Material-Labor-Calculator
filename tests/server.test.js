@@ -15,6 +15,12 @@ const nativeFetch = global.fetch;
 before(async () => {
   tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "material-labor-test-"));
   process.env.CALCULATOR_STORE_FILE = path.join(tempDir, "store.json");
+  await fs.writeFile(process.env.CALCULATOR_STORE_FILE, JSON.stringify({
+    constructionAssumptionCatalog: [
+      { type: "faceFrame", tallDepth: 24, topDrawerHeight: 5, middleDrawerHeight: 10, bottomDrawerHeight: 10 },
+      { type: "frameless", tallDepth: 24, topDrawerHeight: 5, middleDrawerHeight: 10, bottomDrawerHeight: 10 }
+    ]
+  }));
   process.env.DATABASE_URL = "";
   process.env.SESSION_SECRET = "test-session-secret";
   process.env.MATERIAL_LABOR_BRIDGE_SECRET = "test-bridge-secret";
@@ -58,6 +64,7 @@ after(async () => {
 
 test("client-supplied plan flags never grant paid access", async () => {
   const catalog = await (await fetch(`${baseUrl}/api/catalog`)).json();
+  assert.deepEqual(catalog.constructionAssumptions.map((item) => item.tallDepth), [25, 25]);
   assert.deepEqual(catalog.materials.map(({ category, name, thickness, length, width, costPerSheet, wasteFactorPercent }) => ({
     category, name, thickness, length, width, costPerSheet, wasteFactorPercent
   })), [
@@ -188,6 +195,7 @@ test("construction assumption saves drawer height standards", async () => {
     },
     body: JSON.stringify({
       ...assumption,
+      tallDepth: 24,
       topDrawerHeight: 6,
       middleDrawerHeight: 11,
       bottomDrawerHeight: 12
@@ -203,6 +211,7 @@ test("construction assumption saves drawer height standards", async () => {
     headers: { Authorization: `Bearer ${paidSession}` }
   })).json();
   const updatedAssumption = updatedCatalog.constructionAssumptions.find((item) => item.type === "frameless");
+  assert.equal(updatedAssumption.tallDepth, 24);
   assert.deepEqual(
     [updatedAssumption.topDrawerHeight, updatedAssumption.middleDrawerHeight, updatedAssumption.bottomDrawerHeight],
     [6, 11, 12]
@@ -368,6 +377,15 @@ test("only admins can edit the shared default catalog everyone else reads", asyn
   assert.ok(anonymous.materials.some((item) => item.name === "Shared default plywood"));
   const free = await (await fetch(`${baseUrl}/api/catalog`, { headers: bearer(memberSession) })).json();
   assert.ok(free.materials.some((item) => item.name === "Shared default plywood"));
+  const sharedAssumption = anonymous.constructionAssumptions.find((item) => item.type === "frameless");
+  const updatedAssumption = await fetch(`${baseUrl}/api/catalog/construction-assumptions/frameless?scope=shared`, {
+    method: "PUT",
+    headers: bearer(adminToken),
+    body: JSON.stringify({ ...sharedAssumption, tallDepth: 24 })
+  });
+  assert.equal(updatedAssumption.status, 200);
+  const sharedCatalog = await (await fetch(`${baseUrl}/api/catalog`)).json();
+  assert.equal(sharedCatalog.constructionAssumptions.find((item) => item.type === "frameless").tallDepth, 24);
   delete process.env.ADMIN_MEMBER_IDS;
 });
 

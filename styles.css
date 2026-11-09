@@ -72,6 +72,7 @@ body {
   width: min(1100px, 92vw);
   margin: 30px auto 60px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
 
@@ -314,6 +315,26 @@ h1 {
   padding: 14px;
   display: grid;
   gap: 10px;
+}
+
+.standards-section {
+  margin-top: 24px;
+}
+
+.standards-grid {
+  align-items: start;
+}
+
+.standards-grid .input-group,
+.standards-grid label,
+.standards-grid select {
+  min-width: 0;
+}
+
+.standards-grid h4 {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 1em;
 }
 
 .form-row {
@@ -659,6 +680,10 @@ button.danger:hover {
 
   .material-grid {
     grid-template-columns: 1fr;
+  }
+
+  .standards-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .results-grid {

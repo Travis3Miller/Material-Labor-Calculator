@@ -388,7 +388,7 @@ async function readStore(req) {
       [scopeId]
     );
     if (result.rows[0]) {
-      const store = normalizeStore(result.rows[0].store);
+      const store = normalizeStore(result.rows[0].store, { shared: !userId });
       return userId ? store : { ...store, projects: [] };
     }
     if (userId) {
@@ -397,14 +397,14 @@ async function readStore(req) {
         [PUBLIC_SCOPE]
       );
       if (shared.rows[0]) {
-        return { ...normalizeStore(shared.rows[0].store), projects: [] };
+        return { ...normalizeStore(shared.rows[0].store, { shared: true }), projects: [] };
       }
     }
   }
   await ensureStoreFile();
   const raw = await fs.readFile(DATA_FILE, "utf8");
   const stored = JSON.parse(raw);
-  const globalStore = normalizeStore(stored.global || stored);
+  const globalStore = normalizeStore(stored.global || stored, { shared: true });
   if (!userId) {
     return { ...globalStore, projects: [] };
   }
@@ -438,7 +438,7 @@ async function writeStore(req, store) {
   }
   await ensureStoreFile();
   const stored = JSON.parse(await fs.readFile(DATA_FILE, "utf8"));
-  const globalStore = normalizeStore(stored.global || stored);
+  const globalStore = normalizeStore(stored.global || stored, { shared: true });
   if (shared) {
     const sharedUsers = stored.users && typeof stored.users === "object" ? stored.users : Object.create(null);
     await fs.writeFile(
@@ -454,7 +454,7 @@ async function writeStore(req, store) {
   await fs.writeFile(DATA_FILE, JSON.stringify({ global: globalStore, users }, null, 2), "utf8");
 }
 
-function normalizeStore(store) {
+function normalizeStore(store, { shared = false } = {}) {
   const defaultMaterials = [
     { id: "default-maple-melamine-carcass", category: "carcass", name: "3/4 Maple Melamine", thickness: 0.75, length: 96, width: 48, costPerSheet: 50, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
     { id: "default-maple-melamine-back", category: "back", name: "1/4 Maple Melamine", thickness: 0.25, length: 96, width: 48, costPerSheet: 20, wasteFactorPercent: 15, wasteMultiplier: 1.15 },
@@ -500,7 +500,7 @@ function normalizeStore(store) {
       upperHeight: 30,
       upperDepth: 12,
       tallHeight: 90,
-      tallDepth: 24,
+      tallDepth: 25,
       topDrawerHeight: 5,
       middleDrawerHeight: 10,
       bottomDrawerHeight: 10,
@@ -520,7 +520,7 @@ function normalizeStore(store) {
       upperHeight: 30,
       upperDepth: 12,
       tallHeight: 90,
-      tallDepth: 24,
+      tallDepth: 25,
       topDrawerHeight: 5,
       middleDrawerHeight: 10,
       bottomDrawerHeight: 10,
@@ -564,11 +564,19 @@ function normalizeStore(store) {
   const edgeBandingCatalog = mergeDefaults(store.edgeBandingCatalog, defaultsVersion < 4 ? defaultEdgeBandings : []);
   const constructionAssumptionCatalog = Array.isArray(store.constructionAssumptionCatalog) ? store.constructionAssumptionCatalog : [];
   const mergedConstructionAssumptions = defaultConstructionAssumptions.map((item) => {
-    return constructionAssumptionCatalog.find((x) => x.type === item.type) || item;
+    const saved = constructionAssumptionCatalog.find((x) => x.type === item.type);
+    if (!saved) {
+      return item;
+    }
+    if (shared && !store.sharedCabinetDefaultsVersion && saved.tallDepth === 24) {
+      return { ...saved, tallDepth: 25 };
+    }
+    return saved;
   });
 
   return {
     catalogDefaultsVersion: 5,
+    sharedCabinetDefaultsVersion: shared ? 1 : store.sharedCabinetDefaultsVersion,
     projects: Array.isArray(store.projects) ? store.projects : [],
     settings: store.settings && typeof store.settings === "object" && !Array.isArray(store.settings)
       ? store.settings

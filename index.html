@@ -267,90 +267,99 @@
           <button id="saveAssumptionBtn" type="button" class="secondary">Save Assumption</button>
         </div>
         <p class="help">Set cabinet heights and depths here so Calculator can focus on lineal feet.</p>
-        <div class="grid material-grid">
-          <div class="input-group">
-            <h3>Lower Cabinet Standards</h3>
-            <label>Height (in)
-              <input id="lowerHeight" type="number" min="1" step="0.01" value="34.5">
-            </label>
-            <label>Depth (in)
-              <input id="lowerDepth" type="number" min="1" step="0.01" value="24">
-            </label>
-            <label>Top Type
-              <select id="lowerTopType">
-                <option value="full">Full Top</option>
-                <option value="stretchers">Top Stretchers</option>
-              </select>
-            </label>
-            <label id="stretcherWrap">Top Stretcher Width (in)
-              <input id="stretcherWidth" type="number" min="1" step="0.01" value="4">
-            </label>
-          </div>
+        <section class="standards-section" aria-labelledby="cabinetDimensionsHeading">
+          <h3 id="cabinetDimensionsHeading">Cabinet Dimensions</h3>
+          <div class="grid standards-grid">
+            <div class="input-group">
+              <h4>Lower Cabinet Standards</h4>
+              <label>Height (in)
+                <input id="lowerHeight" type="number" min="1" step="0.01" value="34.5">
+              </label>
+              <label>Depth (in)
+                <input id="lowerDepth" type="number" min="1" step="0.01" value="24">
+              </label>
+              <label>Top Type
+                <select id="lowerTopType">
+                  <option value="full">Full Top</option>
+                  <option value="stretchers">Top Stretchers</option>
+                </select>
+              </label>
+              <label id="stretcherWrap">Top Stretcher Width (in)
+                <input id="stretcherWidth" type="number" min="1" step="0.01" value="4">
+              </label>
+            </div>
 
-          <div class="input-group">
-            <h3>Upper Cabinet Standards</h3>
-            <label>Height (in)
-              <input id="upperHeight" type="number" min="1" step="0.01" value="30">
-            </label>
-            <label>Depth (in)
-              <input id="upperDepth" type="number" min="1" step="0.01" value="12">
-            </label>
-          </div>
+            <div class="input-group">
+              <h4>Upper Cabinet Standards</h4>
+              <label>Height (in)
+                <input id="upperHeight" type="number" min="1" step="0.01" value="30">
+              </label>
+              <label>Depth (in)
+                <input id="upperDepth" type="number" min="1" step="0.01" value="12">
+              </label>
+            </div>
 
-          <div class="input-group">
-            <h3>Tall Cabinet Standards</h3>
-            <label>Height (in)
-              <input id="tallHeight" type="number" min="1" step="0.01" value="90">
-            </label>
-            <label>Depth (in)
-              <input id="tallDepth" type="number" min="1" step="0.01" value="24">
-            </label>
+            <div class="input-group">
+              <h4>Tall Cabinet Standards</h4>
+              <label>Height (in)
+                <input id="tallHeight" type="number" min="1" step="0.01" value="90">
+              </label>
+              <label>Depth (in)
+                <input id="tallDepth" type="number" min="1" step="0.01" value="25">
+              </label>
+            </div>
           </div>
+        </section>
+        <section class="standards-section" aria-labelledby="otherStandardsHeading">
+          <h3 id="otherStandardsHeading">Other Standards</h3>
+          <div class="grid standards-grid">
+            <div class="input-group">
+              <h4>Drawer Height Standards</h4>
+              <label>Top Drawer Height (in)
+                <input id="topDrawerHeight" type="number" min="3" max="30" step="1" value="5">
+              </label>
+              <label>Middle Drawer Height (in)
+                <input id="middleDrawerHeight" type="number" min="3" max="30" step="1" value="10">
+              </label>
+              <label>Bottom Drawer Height (in)
+                <input id="bottomDrawerHeight" type="number" min="3" max="30" step="1" value="10">
+              </label>
+            </div>
 
-          <div class="input-group">
-            <h3>Drawer Height Standards</h3>
-            <label>Top Drawer Height (in)
-              <input id="topDrawerHeight" type="number" min="3" max="30" step="1" value="5">
-            </label>
-            <label>Middle Drawer Height (in)
-              <input id="middleDrawerHeight" type="number" min="3" max="30" step="1" value="10">
-            </label>
-            <label>Bottom Drawer Height (in)
-              <input id="bottomDrawerHeight" type="number" min="3" max="30" step="1" value="10">
-            </label>
+            <div class="input-group">
+              <h4>Construction Assumptions</h4>
+              <label>Average Cabinet Box Width (in)
+                <input id="avgWidth" type="number" min="1" step="0.01" value="18">
+              </label>
+              <label>Standard Toe Kick Height (in)
+                <input id="toeKickHeight" type="number" min="1" step="0.01" value="4">
+              </label>
+              <label>Standard Nailer Rip Size (in)
+                <input id="nailerRipSize" type="number" min="1" step="0.01" value="3">
+              </label>
+            </div>
+            <div class="input-group">
+              <h4>Hardwood Fillers (Frameless / Euro)</h4>
+              <label>Typical Filler Width (in)
+                <input id="fillerWidth" type="number" min="0.1" step="0.01" value="2">
+              </label>
+              <label>Lineal Feet Per Filler
+                <input id="lfPerFiller" type="number" min="0.1" step="0.01" value="3">
+              </label>
+              <label>Filler Height
+                <select id="fillerHeightMode">
+                  <option value="average">Use average cabinet height for the job</option>
+                  <option value="specified">Use a specified height</option>
+                </select>
+              </label>
+              <label>Specified Filler Height (in)
+                <input id="fillerHeight" type="number" min="1" step="0.01" value="30">
+              </label>
+              <p class="help compact">Fillers = total cabinet LF ÷ lineal feet per filler. Average height is weighted by the lower, upper, and tall LF in the job. Fillers are cut from the selected board stock at 3/4 in thick.</p>
+              <p class="help compact">Each profile saves its own cabinet and drawer height standards plus typical width.</p>
+            </div>
           </div>
-
-          <div class="input-group">
-            <h3>Construction Assumptions</h3>
-            <label>Average Cabinet Box Width (in)
-              <input id="avgWidth" type="number" min="1" step="0.01" value="18">
-            </label>
-            <label>Standard Toe Kick Height (in)
-              <input id="toeKickHeight" type="number" min="1" step="0.01" value="4">
-            </label>
-            <label>Standard Nailer Rip Size (in)
-              <input id="nailerRipSize" type="number" min="1" step="0.01" value="3">
-            </label>
-            <h3>Hardwood Fillers (Frameless / Euro)</h3>
-            <label>Typical Filler Width (in)
-              <input id="fillerWidth" type="number" min="0.1" step="0.01" value="2">
-            </label>
-            <label>Lineal Feet Per Filler
-              <input id="lfPerFiller" type="number" min="0.1" step="0.01" value="3">
-            </label>
-            <label>Filler Height
-              <select id="fillerHeightMode">
-                <option value="average">Use average cabinet height for the job</option>
-                <option value="specified">Use a specified height</option>
-              </select>
-            </label>
-            <label>Specified Filler Height (in)
-              <input id="fillerHeight" type="number" min="1" step="0.01" value="30">
-            </label>
-            <p class="help compact">Fillers = total cabinet LF ÷ lineal feet per filler. Average height is weighted by the lower, upper, and tall LF in the job. Fillers are cut from the selected board stock at 3/4 in thick.</p>
-            <p class="help compact">Each profile saves its own cabinet and drawer height standards plus typical width.</p>
-          </div>
-        </div>
+        </section>
       </div>
 
       <div id="materialSetupTab" class="tab-panel hidden">
