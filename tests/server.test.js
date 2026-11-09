@@ -17,8 +17,8 @@ before(async () => {
   process.env.CALCULATOR_STORE_FILE = path.join(tempDir, "store.json");
   await fs.writeFile(process.env.CALCULATOR_STORE_FILE, JSON.stringify({
     constructionAssumptionCatalog: [
-      { type: "faceFrame", tallDepth: 24, topDrawerHeight: 5, middleDrawerHeight: 10, bottomDrawerHeight: 10 },
-      { type: "frameless", tallDepth: 24, topDrawerHeight: 5, middleDrawerHeight: 10, bottomDrawerHeight: 10 }
+      { type: "faceFrame", lowerHeight: 34.5, tallDepth: 24, topDrawerHeight: 5, middleDrawerHeight: 10, bottomDrawerHeight: 10 },
+      { type: "frameless", lowerHeight: 34.5, tallDepth: 24, topDrawerHeight: 5, middleDrawerHeight: 10, bottomDrawerHeight: 10 }
     ]
   }));
   process.env.DATABASE_URL = "";
@@ -65,6 +65,7 @@ after(async () => {
 test("client-supplied plan flags never grant paid access", async () => {
   const catalog = await (await fetch(`${baseUrl}/api/catalog`)).json();
   assert.deepEqual(catalog.constructionAssumptions.map((item) => item.tallDepth), [25, 25]);
+  assert.deepEqual(catalog.constructionAssumptions.map((item) => item.lowerHeight), [35.25, 34.5]);
   assert.deepEqual(catalog.materials.map(({ category, name, thickness, length, width, costPerSheet, wasteFactorPercent }) => ({
     category, name, thickness, length, width, costPerSheet, wasteFactorPercent
   })), [
@@ -216,6 +217,20 @@ test("construction assumption saves drawer height standards", async () => {
     [updatedAssumption.topDrawerHeight, updatedAssumption.middleDrawerHeight, updatedAssumption.bottomDrawerHeight],
     [6, 11, 12]
   );
+  const faceFrame = updatedCatalog.constructionAssumptions.find((item) => item.type === "faceFrame");
+  const savedFaceFrame = await fetch(`${baseUrl}/api/catalog/construction-assumptions/faceFrame`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${paidSession}`
+    },
+    body: JSON.stringify({ ...faceFrame, lowerHeight: 34.5 })
+  });
+  assert.equal(savedFaceFrame.status, 200);
+  const personalCatalog = await (await fetch(`${baseUrl}/api/catalog`, {
+    headers: { Authorization: `Bearer ${paidSession}` }
+  })).json();
+  assert.equal(personalCatalog.constructionAssumptions.find((item) => item.type === "faceFrame").lowerHeight, 34.5);
 });
 
 test("project and catalog writes require paid entitlement on the server", async () => {
@@ -386,6 +401,15 @@ test("only admins can edit the shared default catalog everyone else reads", asyn
   assert.equal(updatedAssumption.status, 200);
   const sharedCatalog = await (await fetch(`${baseUrl}/api/catalog`)).json();
   assert.equal(sharedCatalog.constructionAssumptions.find((item) => item.type === "frameless").tallDepth, 24);
+  const sharedFaceFrame = sharedCatalog.constructionAssumptions.find((item) => item.type === "faceFrame");
+  const savedSharedFaceFrame = await fetch(`${baseUrl}/api/catalog/construction-assumptions/faceFrame?scope=shared`, {
+    method: "PUT",
+    headers: bearer(adminToken),
+    body: JSON.stringify({ ...sharedFaceFrame, lowerHeight: 34.5 })
+  });
+  assert.equal(savedSharedFaceFrame.status, 200);
+  const updatedSharedCatalog = await (await fetch(`${baseUrl}/api/catalog`)).json();
+  assert.equal(updatedSharedCatalog.constructionAssumptions.find((item) => item.type === "faceFrame").lowerHeight, 34.5);
   delete process.env.ADMIN_MEMBER_IDS;
 });
 

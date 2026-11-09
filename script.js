@@ -981,7 +981,7 @@ function defaultConstructionAssumptions() {
     {
       type: "faceFrame",
       name: "Face Frame",
-      lowerHeight: 34.5,
+      lowerHeight: 35.25,
       lowerDepth: 24,
       lowerTopType: "full",
       stretcherWidth: 4,

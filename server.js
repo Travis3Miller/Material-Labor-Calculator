@@ -493,7 +493,7 @@ function normalizeStore(store, { shared = false } = {}) {
     {
       type: "faceFrame",
       name: "Face Frame",
-      lowerHeight: 34.5,
+      lowerHeight: 35.25,
       lowerDepth: 24,
       lowerTopType: "full",
       stretcherWidth: 4,
@@ -568,15 +568,20 @@ function normalizeStore(store, { shared = false } = {}) {
     if (!saved) {
       return item;
     }
+    const migrated = { ...saved };
     if (shared && !store.sharedCabinetDefaultsVersion && saved.tallDepth === 24) {
-      return { ...saved, tallDepth: 25 };
+      migrated.tallDepth = 25;
     }
-    return saved;
+    if (shared && Number(store.sharedCabinetDefaultsVersion || 0) < 2
+        && saved.type === "faceFrame" && saved.lowerHeight === 34.5) {
+      migrated.lowerHeight = 35.25;
+    }
+    return migrated;
   });
 
   return {
     catalogDefaultsVersion: 5,
-    sharedCabinetDefaultsVersion: shared ? 1 : store.sharedCabinetDefaultsVersion,
+    sharedCabinetDefaultsVersion: shared ? 2 : store.sharedCabinetDefaultsVersion,
     projects: Array.isArray(store.projects) ? store.projects : [],
     settings: store.settings && typeof store.settings === "object" && !Array.isArray(store.settings)
       ? store.settings
