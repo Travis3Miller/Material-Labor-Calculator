@@ -172,6 +172,43 @@ test("Wix bridge requires the shared secret and returns a signed member session"
   paidSession = (await paid.json()).sessionToken;
 });
 
+test("construction assumption saves drawer height standards", async () => {
+  const catalog = await (await fetch(`${baseUrl}/api/catalog`)).json();
+  const assumption = catalog.constructionAssumptions.find((item) => item.type === "frameless");
+  assert.deepEqual(
+    [assumption.topDrawerHeight, assumption.middleDrawerHeight, assumption.bottomDrawerHeight],
+    [5, 10, 10]
+  );
+
+  const saved = await fetch(`${baseUrl}/api/catalog/construction-assumptions/frameless`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${paidSession}`
+    },
+    body: JSON.stringify({
+      ...assumption,
+      topDrawerHeight: 6,
+      middleDrawerHeight: 11,
+      bottomDrawerHeight: 12
+    })
+  });
+  assert.equal(saved.status, 200);
+  const savedAssumption = await saved.json();
+  assert.deepEqual(
+    [savedAssumption.topDrawerHeight, savedAssumption.middleDrawerHeight, savedAssumption.bottomDrawerHeight],
+    [6, 11, 12]
+  );
+  const updatedCatalog = await (await fetch(`${baseUrl}/api/catalog`, {
+    headers: { Authorization: `Bearer ${paidSession}` }
+  })).json();
+  const updatedAssumption = updatedCatalog.constructionAssumptions.find((item) => item.type === "frameless");
+  assert.deepEqual(
+    [updatedAssumption.topDrawerHeight, updatedAssumption.middleDrawerHeight, updatedAssumption.bottomDrawerHeight],
+    [6, 11, 12]
+  );
+});
+
 test("project and catalog writes require paid entitlement on the server", async () => {
   const projectResponse = await fetch(`${baseUrl}/api/projects`, {
     method: "POST",

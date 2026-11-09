@@ -229,7 +229,7 @@
             </div>
             <div id="drawerSetsWrap" class="list-grid"></div>
             <button id="addDrawerSetBtn" type="button" class="secondary">Add Additional Drawer Height</button>
-            <p class="help compact">Lineal inches prefill from lower LF x 12. You can type your own values at any time.</p>
+            <p class="help compact">Top drawer lineal inches prefill from lower LF x 12; middle and bottom start at 0. Adjust each to match the job.</p>
           </div>
         </div>
 
@@ -308,6 +308,19 @@
           </div>
 
           <div class="input-group">
+            <h3>Drawer Height Standards</h3>
+            <label>Top Drawer Height (in)
+              <input id="topDrawerHeight" type="number" min="3" max="30" step="1" value="5">
+            </label>
+            <label>Middle Drawer Height (in)
+              <input id="middleDrawerHeight" type="number" min="3" max="30" step="1" value="10">
+            </label>
+            <label>Bottom Drawer Height (in)
+              <input id="bottomDrawerHeight" type="number" min="3" max="30" step="1" value="10">
+            </label>
+          </div>
+
+          <div class="input-group">
             <h3>Construction Assumptions</h3>
             <label>Average Cabinet Box Width (in)
               <input id="avgWidth" type="number" min="1" step="0.01" value="18">
@@ -335,7 +348,7 @@
               <input id="fillerHeight" type="number" min="1" step="0.01" value="30">
             </label>
             <p class="help compact">Fillers = total cabinet LF ÷ lineal feet per filler. Average height is weighted by the lower, upper, and tall LF in the job. Fillers are cut from the selected board stock at 3/4 in thick.</p>
-            <p class="help compact">Each profile saves its own lower/upper/tall standards plus typical width.</p>
+            <p class="help compact">Each profile saves its own cabinet and drawer height standards plus typical width.</p>
           </div>
         </div>
       </div>

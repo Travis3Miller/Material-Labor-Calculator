@@ -989,6 +989,9 @@ function defaultConstructionAssumptions() {
       upperDepth: 12,
       tallHeight: 90,
       tallDepth: 24,
+      topDrawerHeight: 5,
+      middleDrawerHeight: 10,
+      bottomDrawerHeight: 10,
       avgWidth: 18,
       toeKickHeight: 4,
       nailerRipSize: 3,
@@ -1008,6 +1011,9 @@ function defaultConstructionAssumptions() {
       upperDepth: 12,
       tallHeight: 90,
       tallDepth: 24,
+      topDrawerHeight: 5,
+      middleDrawerHeight: 10,
+      bottomDrawerHeight: 10,
       avgWidth: 18,
       toeKickHeight: 4,
       nailerRipSize: 3,
@@ -1309,7 +1315,21 @@ function ensureDrawerSetsWhenEnabled() {
 
   const sets = collectDrawerSets();
   if (!sets.length) {
-    renderDrawerSets([createDrawerSet({ name: "Top Drawer", height: 5 })]);
+    renderDrawerSets([
+      createDrawerSet({ name: "Top Drawer", height: toNumber(byId("topDrawerHeight").value) }),
+      createDrawerSet({
+        name: "Middle Drawer",
+        height: toNumber(byId("middleDrawerHeight").value),
+        linealInches: 0,
+        userOverridden: true
+      }),
+      createDrawerSet({
+        name: "Bottom Drawer",
+        height: toNumber(byId("bottomDrawerHeight").value),
+        linealInches: 0,
+        userOverridden: true
+      })
+    ]);
   }
 }
 
@@ -1376,6 +1396,9 @@ function collectConstructionAssumptionFromInputs(type) {
     upperDepth: toNumber(byId("upperDepth").value),
     tallHeight: toNumber(byId("tallHeight").value),
     tallDepth: toNumber(byId("tallDepth").value),
+    topDrawerHeight: toNumber(byId("topDrawerHeight").value),
+    middleDrawerHeight: toNumber(byId("middleDrawerHeight").value),
+    bottomDrawerHeight: toNumber(byId("bottomDrawerHeight").value),
     avgWidth: Math.max(1, toNumber(byId("avgWidth").value)),
     toeKickHeight: Math.max(1, toNumber(byId("toeKickHeight").value)),
     nailerRipSize: Math.max(1, toNumber(byId("nailerRipSize").value)),
@@ -1405,6 +1428,9 @@ function applyConstructionAssumption(type) {
     upperDepth: assumption.upperDepth,
     tallHeight: assumption.tallHeight,
     tallDepth: assumption.tallDepth,
+    topDrawerHeight: assumption.topDrawerHeight,
+    middleDrawerHeight: assumption.middleDrawerHeight,
+    bottomDrawerHeight: assumption.bottomDrawerHeight,
     avgWidth: assumption.avgWidth,
     toeKickHeight: assumption.toeKickHeight,
     nailerRipSize: assumption.nailerRipSize,
@@ -4014,9 +4040,15 @@ function bindDrawerSetEvents() {
 
     const sets = collectDrawerSets();
     if (!sets.length) {
-      sets.push(createDrawerSet({ name: "Top Drawer", height: 5 }));
+      sets.push(createDrawerSet({
+        name: "Top Drawer",
+        height: toNumber(byId("topDrawerHeight").value)
+      }));
     }
-    sets.push(createDrawerSet({ name: `Drawer Set ${sets.length + 1}`, height: 10 }));
+    sets.push(createDrawerSet({
+      name: `Drawer Set ${sets.length + 1}`,
+      height: toNumber(byId("bottomDrawerHeight").value)
+    }));
     renderDrawerSets(sets);
     refreshAutoDrawerLineal();
     calculate();
