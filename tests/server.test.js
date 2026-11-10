@@ -233,6 +233,18 @@ test("construction assumption saves drawer height standards", async () => {
   assert.equal(personalCatalog.constructionAssumptions.find((item) => item.type === "faceFrame").lowerHeight, 34.5);
 });
 
+test("ZIP lookup returns coordinates and rejects unknown codes", async () => {
+  const found = await fetch(`${baseUrl}/api/zip/90210`);
+  assert.equal(found.status, 200);
+  const body = await found.json();
+  assert.equal(body.place, "Beverly Hills, CA");
+  assert.ok(Math.abs(body.lat - 34.09) < 0.1 && Math.abs(body.lon + 118.41) < 0.1);
+  assert.equal((await fetch(`${baseUrl}/api/zip/90210-1234`)).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/zip/00000`)).status, 404);
+  assert.equal((await fetch(`${baseUrl}/api/zip/abcde`)).status, 404);
+  assert.equal((await fetch(`${baseUrl}/api/zip/constructor`)).status, 404);
+});
+
 test("project and catalog writes require paid entitlement on the server", async () => {
   const projectResponse = await fetch(`${baseUrl}/api/projects`, {
     method: "POST",

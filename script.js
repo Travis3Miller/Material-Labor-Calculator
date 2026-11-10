@@ -6,6 +6,7 @@ const LOCAL_PROJECTS_KEY = "cabinet.projects.v1";
 const LOCAL_CATALOG_KEY = "cabinet.catalog.v1";
 const LOCAL_STANDARDS_KEY = "cabinet.standards.v1";
 const LOCAL_OVERHEAD_KEY = "cabinet.shopOverhead.v1";
+const LOCAL_INSTALL_KEY = "cabinet.installSetup.v1";
 const DOOR_GALLONS_PER_SQFT = 0.03;
 const FRAME_MEMBER_WIDTH_IN = 2;
 const FRAME_MEMBER_THICKNESS_IN = 0.75;
@@ -81,6 +82,7 @@ function collectSetupSettings() {
     finishLfPerHour: toNumber(byId("finishLfPerHour")?.value),
     shopCostPerHour: toNumber(byId("shopCostPerHour")?.value),
     shopOverhead: collectShopOverhead(),
+    installSetup: collectInstallSetup(),
     standards: readLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), defaultStandards())
   };
 }
@@ -140,6 +142,10 @@ async function loadSetupSettings() {
     renderShopOverhead(settings.shopOverhead);
     writeLocalJson(localStorageKey(LOCAL_OVERHEAD_KEY), settings.shopOverhead);
   }
+  if (settings.installSetup) {
+    renderInstallSetup(settings.installSetup);
+    writeLocalJson(localStorageKey(LOCAL_INSTALL_KEY), settings.installSetup);
+  }
   state.restoringSettings = false;
   renderDefaultsUi();
   const status = byId("setupSaveStatus");
@@ -188,6 +194,7 @@ function resetSetupSettings() {
     }
   });
   renderShopOverhead(defaultShopOverhead());
+  renderInstallSetup(defaultInstallSetup());
   renderDefaultsUi();
 }
 
@@ -285,7 +292,7 @@ function canEditSetup() {
 }
 
 function guardSetupEdits() {
-  ["cabinetStandardsTab", "materialSetupTab", "laborSetupTab", "shopOverheadTab"].forEach((id) => {
+  ["cabinetStandardsTab", "materialSetupTab", "laborSetupTab", "installTab", "shopOverheadTab"].forEach((id) => {
     const panel = byId(id);
     if (!panel) {
       return;
@@ -311,8 +318,8 @@ const SHOP_EXPENSE_NAMES = [
   "Workers' compensation", "Employee benefits",
   "Paid leave", "Property taxes", "Business taxes and licenses", "Software",
   "Trash and recycling", "Equipment maintenance and repairs", "Equipment payments",
-  "Vehicle and fuel", "Accounting and legal", "Office and administrative wages",
-  "Owner compensation", "Office supplies", "Safety supplies", "Miscellaneous"
+  "Vehicle", "Accounting and legal", "Office and administrative wages",
+  "Owner compensation", "Office supplies", "Safety supplies", "Miscellaneous & Unforeseen"
 ];
 
 function defaultShopOverhead() {
@@ -406,7 +413,8 @@ function renderShopOverhead(data) {
       <label>Hourly Wage ($)<input data-field="wage" type="number" min="0" step="any" value="${escapeHtml(employee.wage)}"></label>
       <button type="button" class="mini-btn" data-free-allowed data-remove-overhead aria-label="Remove employee">Remove</button>
     </div>`).join("");
-  byId("overheadExpenses").innerHTML = expenses.map((expense) => `
+  const renamed = { "Vehicle and fuel": "Vehicle", "Miscellaneous": "Miscellaneous & Unforeseen" };
+  byId("overheadExpenses").innerHTML = expenses.map((saved) => ({ ...saved, name: renamed[saved.name] || saved.name })).map((expense) => `
     <div class="overhead-row" data-overhead-row>
       <label>Expense<input data-field="name" type="text" maxlength="200" value="${escapeHtml(expense.name)}"></label>
       <label>Cost ($)<input data-field="amount" type="number" min="0" step="any" value="${escapeHtml(expense.amount)}"></label>
@@ -525,6 +533,180 @@ function bindShopOverhead() {
   });
 }
 
+const INSTALL_FIELDS = {
+  shopZip: "installShopZip",
+  mpg: "installMpg",
+  fuelPrice: "installFuelPrice",
+  roadFactor: "installRoadFactor",
+  trips: "installTrips",
+  tripsPerLf: "installTripsPerLf",
+  tripsNoInstall: "installTripsNoInstall",
+  tripsPerLfNoInstall: "installTripsPerLfNoInstall"
+};
+
+function defaultInstallSetup() {
+  return {
+    shopZip: "", mpg: "14", fuelPrice: "3.75", roadFactor: "1.25",
+    trips: "3", tripsPerLf: "50", tripsNoInstall: "1", tripsPerLfNoInstall: "0"
+  };
+}
+
+function collectInstallSetup() {
+  const setup = {};
+  Object.entries(INSTALL_FIELDS).forEach(([key, id]) => {
+    setup[key] = byId(id) ? byId(id).value.trim() : "";
+  });
+  return setup;
+}
+
+function renderInstallSetup(data) {
+  const defaults = defaultInstallSetup();
+  const setup = data && typeof data === "object" ? data : defaults;
+  Object.entries(INSTALL_FIELDS).forEach(([key, id]) => {
+    byId(id).value = setup[key] ?? defaults[key];
+  });
+  refreshZipStatuses();
+}
+
+function loadLocalInstallSetup() {
+  const saved = readLocalJson(localStorageKey(LOCAL_INSTALL_KEY), null);
+  renderInstallSetup(saved && typeof saved === "object" ? saved : defaultInstallSetup());
+}
+
+function saveLocalInstallSetup() {
+  writeLocalJson(localStorageKey(LOCAL_INSTALL_KEY), collectInstallSetup());
+}
+
+async function saveInstallNow() {
+  const status = byId("installSaveStatus");
+  saveLocalInstallSetup();
+  if (state.plan !== "pro" || !state.sessionToken) {
+    status.textContent = "Saved on this device. Upgrade to the paid plan to save it to your account.";
+    return;
+  }
+  status.textContent = "Saving…";
+  clearTimeout(setupSettingsTimer);
+  try {
+    const response = await apiFetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectSetupSettings())
+    });
+    if (!response.ok) {
+      throw new Error("Could not save install setup.");
+    }
+    status.textContent = "Install setup saved to your account.";
+  } catch (err) {
+    status.textContent = "Saved on this device, but could not save to your account. Please try again.";
+    console.error(err);
+  }
+}
+
+function bindInstallSetup() {
+  const panel = byId("installTab");
+  panel.addEventListener("input", (event) => {
+    if (!event.target.matches("input")) return;
+    saveLocalInstallSetup();
+    byId("installSaveStatus").textContent = "";
+    scheduleSetupSettingsSave();
+    refreshZipStatuses();
+    calculate();
+  });
+  byId("saveInstall").addEventListener("click", saveInstallNow);
+  byId("jobZip").addEventListener("input", refreshZipStatuses);
+}
+
+function haversineMiles(lat1, lon1, lat2, lon2) {
+  const radians = (degrees) => degrees * Math.PI / 180;
+  const a = Math.sin(radians(lat2 - lat1) / 2) ** 2
+    + Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(radians(lon2 - lon1) / 2) ** 2;
+  return 3958.8 * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function calcTravel(setup, job) {
+  const num = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  };
+  const baseTrips = num(job.includeInstall ? setup.trips : setup.tripsNoInstall);
+  const lfPerExtraTrip = num(job.includeInstall ? setup.tripsPerLf : setup.tripsPerLfNoInstall);
+  const extraTrips = lfPerExtraTrip > 0 ? Math.floor(num(job.totalLf) / lfPerExtraTrip) : 0;
+  const trips = baseTrips + extraTrips;
+  const mpg = num(setup.mpg);
+  const roadMiles = num(job.straightMiles) * Math.max(1, num(setup.roadFactor, 1));
+  const totalMiles = roadMiles * 2 * trips;
+  const gallons = mpg > 0 ? totalMiles / mpg : 0;
+  return { trips, oneWayMiles: roadMiles, totalMiles, gallons, cost: gallons * num(setup.fuelPrice) };
+}
+
+const zipCache = {};
+
+function normalizeZip(value) {
+  const zip = String(value || "").trim().slice(0, 5);
+  return /^\d{5}$/.test(zip) ? zip : "";
+}
+
+function zipInfo(value) {
+  const zip = normalizeZip(value);
+  if (!zip) return undefined;
+  if (zipCache[zip] === undefined) {
+    zipCache[zip] = "loading";
+    fetch(`/api/zip/${zip}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null)
+      .then((info) => {
+        zipCache[zip] = info;
+        refreshZipStatuses();
+        calculate();
+      });
+  }
+  return zipCache[zip];
+}
+
+function zipStatusText(value) {
+  if (!String(value || "").trim()) return "";
+  const info = zipInfo(value);
+  if (info === "loading") return "Looking up ZIP code…";
+  if (!info) return "ZIP code not found. Use a 5-digit US ZIP code.";
+  return info.place;
+}
+
+function refreshZipStatuses() {
+  if (!byId("installShopZip")) return;
+  byId("installShopZipStatus").textContent = zipStatusText(byId("installShopZip").value);
+  const jobStatus = zipStatusText(byId("jobZip").value);
+  byId("jobZipStatus").textContent = jobStatus;
+}
+
+function jobTravel(settings) {
+  const setup = collectInstallSetup();
+  const result = { note: "", cost: 0, trips: 0, oneWayMiles: 0, totalMiles: 0, gallons: 0 };
+  if (!settings.jobZip) {
+    result.note = "Enter the job site ZIP code to estimate fuel.";
+    return result;
+  }
+  if (!setup.shopZip) {
+    result.note = "Enter your shop ZIP code on the Install Set Up tab to estimate fuel.";
+    return result;
+  }
+  const shop = zipInfo(setup.shopZip);
+  const site = zipInfo(settings.jobZip);
+  if (shop === "loading" || site === "loading") {
+    result.note = "Looking up ZIP codes…";
+    return result;
+  }
+  if (!shop || !site) {
+    result.note = `${!shop ? "Shop" : "Job site"} ZIP code not found.`;
+    return result;
+  }
+  const travel = calcTravel(setup, {
+    includeInstall: settings.includeInstall,
+    totalLf: settings.lowerLF + settings.upperLF + settings.tallLF,
+    straightMiles: haversineMiles(shop.lat, shop.lon, site.lat, site.lon)
+  });
+  return { ...result, ...travel, place: site.place };
+}
+
 function listenForWixMember() {
   if (!WIX_PARENT_ORIGINS.length) {
     return;
@@ -539,6 +721,7 @@ function listenForWixMember() {
       resetSetupSettings();
       state.memberId = "";
       loadLocalShopOverhead();
+      loadLocalInstallSetup();
       state.authenticated = false;
       state.plan = "free";
       state.dataMode = "unknown";
@@ -561,6 +744,7 @@ function listenForWixMember() {
     state.memberName = typeof event.data.name === "string" ? event.data.name.slice(0, 100) : "";
     state.memberId = nextMemberId;
     loadLocalShopOverhead();
+    loadLocalInstallSetup();
     state.dataMode = "unknown";
     setWelcomeName(state.memberName);
     await hydratePlanBanner();
@@ -1817,6 +2001,7 @@ function collectSettings() {
     installLfPerHour: Math.max(0.01, toNumber(byId("installLfPerHour").value)),
     finishLfPerHour: Math.max(0.01, toNumber(byId("finishLfPerHour").value)),
     shopCostPerHour: Math.max(0, toNumber(byId("shopCostPerHour").value)),
+    jobZip: byId("jobZip").value.trim(),
     includeBuild: byId("includeBuildSelect").value === "yes",
     includeInstall: byId("includeInstallSelect").value === "yes",
     includeFinish: byId("includeFinishSelect").value === "yes",
@@ -1883,6 +2068,7 @@ function applyProject(project) {
     installLfPerHour: settings.installLfPerHour,
     finishLfPerHour: settings.finishLfPerHour,
     shopCostPerHour: settings.shopCostPerHour,
+    jobZip: settings.jobZip || "",
     includeBuildSelect: settings.includeBuild === false ? "no" : "yes",
     includeInstallSelect: settings.includeInstall === false ? "no" : "yes",
     includeFinishSelect: settings.includeFinish === false ? "no" : "yes",
@@ -2009,12 +2195,14 @@ function switchTab(tabName) {
   const isMaterial = tabName === "material";
   const isLabor = tabName === "labor";
   const isOverhead = tabName === "shopOverhead";
+  const isInstall = tabName === "install";
 
   byId("calculatorTab").classList.toggle("hidden", !isCalc);
   byId("cabinetStandardsTab").classList.toggle("hidden", !isStandards);
   byId("materialSetupTab").classList.toggle("hidden", !isMaterial);
   byId("laborSetupTab").classList.toggle("hidden", !isLabor);
   byId("shopOverheadTab").classList.toggle("hidden", !isOverhead);
+  byId("installTab").classList.toggle("hidden", !isInstall);
   byId("resultsSection").classList.toggle("hidden", !isCalc);
 
   byId("calculatorTabBtn").classList.toggle("active", isCalc);
@@ -2022,6 +2210,7 @@ function switchTab(tabName) {
   byId("materialSetupTabBtn").classList.toggle("active", isMaterial);
   byId("laborSetupTabBtn").classList.toggle("active", isLabor);
   byId("shopOverheadTabBtn").classList.toggle("active", isOverhead);
+  byId("installTabBtn").classList.toggle("active", isInstall);
 }
 
 function switchMaterialSubTab(tabName) {
@@ -4243,7 +4432,8 @@ function calculate() {
     : '<div class="result-line"><span>Consumables</span><span class="result-value">None apply to this job</span></div>';
 
   const totalMaterialCost = cabinetBoxTotalCost + drawerTotalCost + doorTotalCost + accessoryTotalCost + paintCostTotal + consumablesTotalCost;
-  const grandTotalCost = totalMaterialCost + totalLaborCost;
+  const travel = jobTravel(settings);
+  const grandTotalCost = totalMaterialCost + totalLaborCost + travel.cost;
 
   byId("resultsGrid").innerHTML = [
     resultTile("Lower Cabinets", lower.carcassSqFtPerLF, lower.backSqFtPerLF, settings.lowerLF),
@@ -4390,6 +4580,17 @@ function calculate() {
     </article>
 
     <article class="result-tile">
+      <h3>Travel &amp; Fuel</h3>
+      ${travel.note ? `<div class="meta">${escapeHtml(travel.note)}</div>` : `
+      <div class="result-line"><span>Job Site</span><span class="result-value">${escapeHtml(travel.place)}</span></div>
+      <div class="result-line"><span>One-Way Road Distance</span><span class="result-value">${round2(travel.oneWayMiles)} mi</span></div>
+      <div class="result-line"><span>Trips to Job Site</span><span class="result-value">${round2(travel.trips)}</span></div>
+      <div class="result-line"><span>Total Miles (round trips)</span><span class="result-value">${round2(travel.totalMiles)} mi</span></div>
+      <div class="result-line"><span>Fuel Used</span><span class="result-value">${round2(travel.gallons)} gal</span></div>
+      <div class="result-line result-separator"><span>Fuel Cost</span><span class="result-value total">${dollars(travel.cost)}</span></div>`}
+    </article>
+
+    <article class="result-tile">
       <h3>Grand Total</h3>
       <div class="result-line"><span>Cabinet Box</span><span class="result-value">${dollars(cabinetBoxTotalCost)}</span></div>
       <div class="result-line"><span>Drawers</span><span class="result-value">${dollars(drawerTotalCost)}</span></div>
@@ -4398,6 +4599,7 @@ function calculate() {
       <div class="result-line"><span>Accessories</span><span class="result-value">${dollars(accessoryTotalCost)}</span></div>
       <div class="result-line"><span>Production Consumables</span><span class="result-value">${dollars(consumablesTotalCost)}</span></div>
       <div class="result-line"><span>Total Labor</span><span class="result-value">${dollars(totalLaborCost)}</span></div>
+      <div class="result-line"><span>Travel &amp; Fuel</span><span class="result-value">${dollars(travel.cost)}</span></div>
       <div class="result-line result-separator"><span>Grand Total</span><span class="result-value total">${dollars(grandTotalCost)}</span></div>
     </article>
   `;
@@ -4605,7 +4807,7 @@ function bindCalculationInputs() {
     "buildLfPerHour", "installLfPerHour", "finishLfPerHour", "shopCostPerHour",
     "carcassMaterialSelect", "backMaterialSelect", "finishedEndMaterialSelect", "drawerBoxMaterialSelect", "drawerBottomMaterialSelect", "drawerSlideSelect", "doorStyleSelect", "paintTypeSelect", "hingeTypeSelect", "basePlateTypeSelect", "boardStockSelect", "edgeBandingSelect",
     "toeKickMaterialSelect", "nailerMaterialSelect", "crownMaterialSelect", "toeKickHeight", "toeKickSleeperSpacing", "nailerRipSize", "fillerWidth", "lfPerFiller", "fillerHeightMode", "fillerHeight",
-    "includeBuildSelect", "includeInstallSelect", "includeFinishSelect", "useStandardMaterialsSelect"
+    "includeBuildSelect", "includeInstallSelect", "includeFinishSelect", "useStandardMaterialsSelect", "jobZip"
   ];
 
   fields.forEach((id) => {
@@ -4756,6 +4958,7 @@ function bindUiEvents() {
   byId("materialSetupTabBtn").addEventListener("click", () => switchTab("material"));
   byId("laborSetupTabBtn").addEventListener("click", () => switchTab("labor"));
   byId("shopOverheadTabBtn").addEventListener("click", () => switchTab("shopOverhead"));
+  byId("installTabBtn").addEventListener("click", () => switchTab("install"));
 
   byId("panelStockTabBtn").addEventListener("click", () => switchMaterialSubTab("panelStock"));
   byId("boardStockTabBtn").addEventListener("click", () => switchMaterialSubTab("boardStock"));
@@ -4812,8 +5015,10 @@ async function initialize() {
   ensureDrawerSetsWhenEnabled();
   refreshAutoDrawerLineal();
   loadLocalShopOverhead();
+  loadLocalInstallSetup();
   bindUiEvents();
   bindShopOverhead();
+  bindInstallSetup();
   bindCalculationInputs();
   bindDrawerSetEvents();
   bindListDeleteEvents();

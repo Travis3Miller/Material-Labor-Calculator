@@ -28,6 +28,7 @@
         <button id="cabinetStandardsTabBtn" type="button" class="tab-btn">Cabinetry Standards Set Up</button>
         <button id="materialSetupTabBtn" type="button" class="tab-btn">Material Set Up</button>
         <button id="laborSetupTabBtn" type="button" class="tab-btn">Labor Set Up</button>
+        <button id="installTabBtn" type="button" class="tab-btn">Install Set Up</button>
         <button id="shopOverheadTabBtn" type="button" class="tab-btn">Shop Overhead</button>
       </div>
 
@@ -176,6 +177,10 @@
                 <option value="no">No</option>
               </select>
             </label>
+            <label>Job Site ZIP Code
+              <input id="jobZip" type="text" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="Used to estimate fuel">
+            </label>
+            <p id="jobZipStatus" class="help compact" aria-live="polite"></p>
             <p class="help compact">These selections drive sheet counts and costs for this project.</p>
           </div>
         </div>
@@ -868,6 +873,57 @@
         </div>
       </div>
 
+      <div id="installTab" class="tab-panel hidden">
+        <p class="setup-upgrade-note" hidden>Upgrade to save your install setup to your account.</p>
+        <h2>Install Set Up</h2>
+        <p class="help">Fuel for each job is figured from the distance between your shop and the job site, the trips the job needs, and your vehicle. Enter the job site ZIP code on the Calculator tab.</p>
+        <div class="grid material-grid">
+          <div class="input-group">
+            <h3>Shop &amp; Vehicle</h3>
+            <label>Shop ZIP Code
+              <input id="installShopZip" type="text" inputmode="numeric" maxlength="10" autocomplete="postal-code">
+            </label>
+            <p id="installShopZipStatus" class="help compact" aria-live="polite"></p>
+            <label>Average Vehicle MPG
+              <input id="installMpg" type="number" min="0.1" step="any" value="14">
+            </label>
+            <label>Average Fuel Price ($ per gallon)
+              <input id="installFuelPrice" type="number" min="0" step="any" value="3.75">
+            </label>
+            <label>Road Distance Factor
+              <input id="installRoadFactor" type="number" min="1" step="any" value="1.25">
+            </label>
+            <p class="help compact">ZIP codes give the straight-line distance (haversine). Roads are longer, so the factor stretches it: 1.25 adds 25%.</p>
+          </div>
+          <div class="input-group">
+            <h3>Trips When Installing</h3>
+            <label>Trips Per Job
+              <input id="installTrips" type="number" min="0" step="1" value="3">
+            </label>
+            <label>Add 1 Trip For Every ___ LF (0 = none)
+              <input id="installTripsPerLf" type="number" min="0" step="any" value="50">
+            </label>
+            <p class="help compact">A small job might need 3 trips: measure, install, and touch up. Each trip is a round trip from the shop.</p>
+          </div>
+          <div class="input-group">
+            <h3>Trips When Not Installing</h3>
+            <label>Trips Per Job
+              <input id="installTripsNoInstall" type="number" min="0" step="1" value="1">
+            </label>
+            <label>Add 1 Trip For Every ___ LF (0 = none)
+              <input id="installTripsPerLfNoInstall" type="number" min="0" step="any" value="0">
+            </label>
+            <p class="help compact">Used when Include Install is set to No, for example a measure visit or a delivery.</p>
+          </div>
+        </div>
+        <div class="input-group">
+          <div class="button-row">
+            <button id="saveInstall" type="button" data-free-allowed>Save Install Set Up</button>
+          </div>
+          <p id="installSaveStatus" class="help compact" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+
       <div id="shopOverheadTab" class="tab-panel hidden">
         <p class="setup-upgrade-note" hidden>Upgrade to save your shop overhead setup to your account.</p>
         <h2>Shop Overhead</h2>
@@ -896,6 +952,7 @@
             <label>Payroll Tax Burden (% of wages)
               <input id="overheadTaxBurden" type="number" min="0" max="100" step="any" value="0">
             </label>
+            <p class="help compact">Vehicle costs here cover insurance, payments and maintenance. Fuel is figured per job on the Install Set Up tab from the shop and job-site ZIP codes, so leave fuel out of this expense. Consider budgeting about $250 per month for Miscellaneous &amp; Unforeseen costs.</p>
             <p class="help compact">Employer taxes as a percent of wages: 10% on a $25.00 wage adds $2.50 per hour. Applied to all employee wages, including paid holidays.</p>
             <p class="help compact">Efficiency is the share of working time spent on measurable job production, after paid breaks, cleanup, maintenance and other nonproduction time.</p>
           </div>

@@ -226,6 +226,23 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", service: "cabinet-material-calculator" });
 });
 
+let zipData;
+function lookupZip(zip) {
+  if (!zipData) {
+    zipData = JSON.parse(require("fs").readFileSync(path.join(__dirname, "zip-data.json"), "utf8"));
+  }
+  return Object.prototype.hasOwnProperty.call(zipData, zip) ? zipData[zip] : null;
+}
+
+app.get("/api/zip/:zip", (req, res) => {
+  const zip = String(req.params.zip).trim().slice(0, 5);
+  const entry = /^\d{5}$/.test(zip) ? lookupZip(zip) : null;
+  if (!entry) {
+    return res.status(404).json({ error: "ZIP code not found." });
+  }
+  res.json({ zip, lat: entry[0], lon: entry[1], place: entry[2] });
+});
+
 app.get("/api/config", async (req, res) => {
   let isPro = false;
   try {
@@ -354,6 +371,9 @@ app.put("/api/settings", async (req, res) => {
     if (input.shopOverhead !== undefined && !validShopOverhead(input.shopOverhead)) {
       return res.status(400).json({ error: "Invalid shop overhead setup." });
     }
+    if (input.installSetup !== undefined && !validInstallSetup(input.installSetup)) {
+      return res.status(400).json({ error: "Invalid install setup." });
+    }
     store.settings = {
       wasteFactorPercent: Number.isFinite(Number(input.wasteFactorPercent))
         ? Math.max(0, Number(input.wasteFactorPercent))
@@ -371,6 +391,7 @@ app.put("/api/settings", async (req, res) => {
         ? Math.max(0, Number(input.shopCostPerHour))
         : 65,
       shopOverhead: input.shopOverhead === undefined ? store.settings.shopOverhead : input.shopOverhead,
+      installSetup: input.installSetup === undefined ? store.settings.installSetup : input.installSetup,
       standards: input.standards && typeof input.standards === "object" && !Array.isArray(input.standards)
         ? input.standards
         : {}
@@ -381,6 +402,13 @@ app.put("/api/settings", async (req, res) => {
     res.status(500).json({ error: "Could not save setup settings." });
   }
 });
+
+const INSTALL_SETUP_KEYS = ["shopZip", "mpg", "fuelPrice", "roadFactor", "trips", "tripsPerLf", "tripsNoInstall", "tripsPerLfNoInstall"];
+
+function validInstallSetup(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    && INSTALL_SETUP_KEYS.every((key) => typeof value[key] === "string" && value[key].length <= 40);
+}
 
 function validShopOverhead(value) {
   const text = (entry, max) => typeof entry === "string" && entry.length <= max;
