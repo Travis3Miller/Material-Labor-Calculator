@@ -24,6 +24,9 @@ test("overhead rate uses productive employee hours, wages, and annualized expens
   assert.equal(result.clockHours, 4000);
   assert.equal(result.productiveHours, 3200);
   assert.equal(result.rate, 35.9375);
+  assert.equal(result.annualTotal, 115000);
+  assert.equal(result.dailyCost, 460);
+  assert.equal(result.wagePerHour + result.taxPerHour + result.overheadPerHour, result.rate);
 });
 
 test("paid holidays add wages without adding productive hours", () => {

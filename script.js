@@ -5,6 +5,7 @@ function byId(id) {
 const LOCAL_PROJECTS_KEY = "cabinet.projects.v1";
 const LOCAL_CATALOG_KEY = "cabinet.catalog.v1";
 const LOCAL_STANDARDS_KEY = "cabinet.standards.v1";
+const LOCAL_OVERHEAD_KEY = "cabinet.shopOverhead.v1";
 const DOOR_GALLONS_PER_SQFT = 0.03;
 const FRAME_MEMBER_WIDTH_IN = 2;
 const FRAME_MEMBER_THICKNESS_IN = 0.75;
@@ -135,7 +136,10 @@ async function loadSetupSettings() {
   if (settings.standards && typeof settings.standards === "object") {
     writeLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), settings.standards);
   }
-  renderShopOverhead(settings.shopOverhead || defaultShopOverhead());
+  if (settings.shopOverhead) {
+    renderShopOverhead(settings.shopOverhead);
+    writeLocalJson(localStorageKey(LOCAL_OVERHEAD_KEY), settings.shopOverhead);
+  }
   state.restoringSettings = false;
   renderDefaultsUi();
   const status = byId("setupSaveStatus");
@@ -291,7 +295,7 @@ function guardSetupEdits() {
         return;
       }
       const target = event.target.closest("button, input[data-standard-type]");
-      if (!target || target.classList.contains("sub-tab-btn")) {
+      if (!target || target.classList.contains("sub-tab-btn") || target.hasAttribute("data-free-allowed")) {
         return;
       }
       event.preventDefault();
@@ -373,11 +377,18 @@ function shopOverheadEstimate(data) {
     sum + number(expense.amount) * (expense.period === "monthly" ? 12 : 1), 0);
   const clockHours = operatingDays * hours * data.employees.length;
   const productiveHours = clockHours * efficiency / 100;
+  const annualTotal = annualWages + annualTaxBurden + annualOverhead;
   const rate = (annualWages + annualTaxBurden + annualOverhead) / productiveHours;
-  if (![annualWages, annualTaxBurden, annualOverhead, clockHours, productiveHours, rate].every(Number.isFinite)) {
+  if (![annualWages, annualTaxBurden, annualOverhead, annualTotal, clockHours, productiveHours, rate].every(Number.isFinite)) {
     return { error: "The entered amounts are too large to calculate a rate." };
   }
-  return { operatingDays, dailyWages: wageSum * hours, annualWages, annualTaxBurden, annualOverhead, clockHours, productiveHours, rate };
+  return {
+    operatingDays, dailyWages: wageSum * hours, annualWages, annualTaxBurden, annualOverhead, annualTotal,
+    dailyCost: annualTotal / operatingDays, monthlyCost: annualTotal / 12,
+    wagePerHour: annualWages / productiveHours, taxPerHour: annualTaxBurden / productiveHours,
+    overheadPerHour: annualOverhead / productiveHours,
+    clockHours, productiveHours, rate
+  };
 }
 
 function renderShopOverhead(data) {
@@ -393,7 +404,7 @@ function renderShopOverhead(data) {
     <div class="overhead-row" data-overhead-row>
       <label>Employee Name<input data-field="name" type="text" maxlength="200" value="${escapeHtml(employee.name)}"></label>
       <label>Hourly Wage ($)<input data-field="wage" type="number" min="0" step="any" value="${escapeHtml(employee.wage)}"></label>
-      <button type="button" class="mini-btn" data-remove-overhead aria-label="Remove employee">Remove</button>
+      <button type="button" class="mini-btn" data-free-allowed data-remove-overhead aria-label="Remove employee">Remove</button>
     </div>`).join("");
   byId("overheadExpenses").innerHTML = expenses.map((expense) => `
     <div class="overhead-row" data-overhead-row>
@@ -403,53 +414,104 @@ function renderShopOverhead(data) {
         <option value="monthly"${expense.period === "monthly" ? " selected" : ""}>Monthly</option>
         <option value="annual"${expense.period === "annual" ? " selected" : ""}>Annual</option>
       </select></label>
-      <button type="button" class="mini-btn" data-remove-overhead aria-label="Remove expense">Remove</button>
+      <button type="button" class="mini-btn" data-free-allowed data-remove-overhead aria-label="Remove expense">Remove</button>
     </div>`).join("");
   updateShopOverheadSummary();
 }
 
 function updateShopOverheadSummary() {
-  const result = shopOverheadEstimate(collectShopOverhead());
+  const data = collectShopOverhead();
+  const result = shopOverheadEstimate(data);
   byId("applyOverheadRate").disabled = Boolean(result.error);
+  const taxPct = Number(data.taxBurden) || 0;
   byId("overheadSummary").innerHTML = result.error
     ? `<p class="help">${escapeHtml(result.error)}</p>`
-    : `<div class="result-line"><span>Operating days per year</span><span>${round2(result.operatingDays)}</span></div>
-       <div class="result-line"><span>Employee wages per working day</span><span>${dollars(result.dailyWages)}</span></div>
+    : `<div class="result-line result-separator"><span>Operating days per year</span><span>${round2(result.operatingDays)}</span></div>
+       <div class="result-line"><span>Production wages per working day</span><span>${dollars(result.dailyWages)}</span></div>
+       ${data.employees.map((employee) => `<div class="result-line"><span>${escapeHtml(employee.name)} tax burden / hr</span><span>${dollars(Number(employee.wage) * taxPct / 100)}</span></div>`).join("")}
        <div class="result-line"><span>Annual production wages</span><span>${dollars(result.annualWages)}</span></div>
-       ${collectShopOverhead().employees.map((employee) => `<div class="result-line"><span>${escapeHtml(employee.name)} tax burden / hr</span><span>${dollars(Number(employee.wage) * (Number(collectShopOverhead().taxBurden) || 0) / 100)}</span></div>`).join("")}
        <div class="result-line"><span>Annual payroll tax burden</span><span>${dollars(result.annualTaxBurden)}</span></div>
-       <div class="result-line"><span>Annual overhead</span><span>${dollars(result.annualOverhead)}</span></div>
-       <div class="result-line"><span>Annual working employee hours</span><span>${round2(result.clockHours)}</span></div>
+       <div class="result-line"><span>Annual operating expenses</span><span>${dollars(result.annualOverhead)}</span></div>
+       <div class="result-line"><span>Total annual shop cost (no materials)</span><span>${dollars(result.annualTotal)}</span></div>
+       <div class="result-line"><span>Average monthly shop cost</span><span>${dollars(result.monthlyCost)}</span></div>
+       <div class="result-line"><strong>Daily cost to operate the shop</strong><strong>${dollars(result.dailyCost)}</strong></div>
+       <div class="result-line result-separator"><span>Annual working employee hours</span><span>${round2(result.clockHours)}</span></div>
        <div class="result-line"><span>Annual productive man-hours</span><span>${round2(result.productiveHours)}</span></div>
-       <div class="result-line result-separator"><strong>Cost per productive man-hour</strong><strong>${dollars(result.rate)}</strong></div>`;
+       <div class="result-line"><span>Wages per productive man-hour</span><span>${dollars(result.wagePerHour)}</span></div>
+       <div class="result-line"><span>Tax burden per productive man-hour</span><span>${dollars(result.taxPerHour)}</span></div>
+       <div class="result-line"><span>Overhead per productive man-hour</span><span>${dollars(result.overheadPerHour)}</span></div>
+       <div class="result-line result-separator"><strong>Suggested cost per labor hour</strong><strong>${dollars(result.rate)}</strong></div>`;
+}
+
+function loadLocalShopOverhead() {
+  const saved = readLocalJson(localStorageKey(LOCAL_OVERHEAD_KEY), null);
+  renderShopOverhead(saved && typeof saved === "object" ? saved : defaultShopOverhead());
+}
+
+function saveLocalShopOverhead() {
+  writeLocalJson(localStorageKey(LOCAL_OVERHEAD_KEY), collectShopOverhead());
+}
+
+async function saveShopOverheadNow() {
+  const status = byId("overheadSaveStatus");
+  saveLocalShopOverhead();
+  if (state.plan !== "pro" || !state.sessionToken) {
+    status.textContent = "Saved on this device. Upgrade to the paid plan to save it to your account.";
+    return;
+  }
+  status.textContent = "Saving…";
+  clearTimeout(setupSettingsTimer);
+  try {
+    const response = await apiFetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectSetupSettings())
+    });
+    if (!response.ok) {
+      throw new Error("Could not save shop overhead.");
+    }
+    status.textContent = "Shop overhead saved to your account.";
+  } catch (err) {
+    status.textContent = "Saved on this device, but could not save to your account. Please try again.";
+    console.error(err);
+  }
 }
 
 function bindShopOverhead() {
   const panel = byId("shopOverheadTab");
+  const changed = () => {
+    updateShopOverheadSummary();
+    saveLocalShopOverhead();
+    byId("overheadSaveStatus").textContent = "";
+    scheduleSetupSettingsSave();
+  };
   ["input", "change"].forEach((type) => panel.addEventListener(type, (event) => {
     if (event.target.matches("input, select")) {
-      updateShopOverheadSummary();
-      scheduleSetupSettingsSave();
+      changed();
     }
   }));
   panel.addEventListener("click", (event) => {
     if (!event.target.matches("[data-remove-overhead]")) return;
     event.target.closest("[data-overhead-row]").remove();
-    updateShopOverheadSummary();
-    scheduleSetupSettingsSave();
+    changed();
   });
   byId("addOverheadEmployee").addEventListener("click", () => {
     const data = collectShopOverhead();
     data.employees.push({ name: "", wage: "" });
     renderShopOverhead(data);
-    scheduleSetupSettingsSave();
+    changed();
   });
   byId("addOverheadExpense").addEventListener("click", () => {
     const data = collectShopOverhead();
     data.expenses.push({ name: "", amount: "", period: "monthly" });
     renderShopOverhead(data);
-    scheduleSetupSettingsSave();
+    changed();
   });
+  byId("calculateOverhead").addEventListener("click", () => {
+    updateShopOverheadSummary();
+    byId("overheadSummary").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  byId("saveOverhead").addEventListener("click", saveShopOverheadNow);
   byId("applyOverheadRate").addEventListener("click", () => {
     const result = shopOverheadEstimate(collectShopOverhead());
     if (result.error) {
@@ -476,6 +538,7 @@ function listenForWixMember() {
       state.memberName = "";
       resetSetupSettings();
       state.memberId = "";
+      loadLocalShopOverhead();
       state.authenticated = false;
       state.plan = "free";
       state.dataMode = "unknown";
@@ -497,6 +560,7 @@ function listenForWixMember() {
     state.sessionToken = event.data.sessionToken;
     state.memberName = typeof event.data.name === "string" ? event.data.name.slice(0, 100) : "";
     state.memberId = nextMemberId;
+    loadLocalShopOverhead();
     state.dataMode = "unknown";
     setWelcomeName(state.memberName);
     await hydratePlanBanner();
@@ -4747,7 +4811,7 @@ async function initialize() {
   renderDrawerSets([]);
   ensureDrawerSetsWhenEnabled();
   refreshAutoDrawerLineal();
-  renderShopOverhead(defaultShopOverhead());
+  loadLocalShopOverhead();
   bindUiEvents();
   bindShopOverhead();
   bindCalculationInputs();

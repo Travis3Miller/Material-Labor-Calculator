@@ -903,20 +903,25 @@
             <h3>Employees</h3>
             <p class="help compact">List production employees whose hours are available for jobs. All employees use the shop schedule above. Include office or owner compensation as an expense instead if they do not produce jobs.</p>
             <div id="overheadEmployees"></div>
-            <button id="addOverheadEmployee" type="button" class="secondary">Add Employee</button>
-          </div>
-          <div class="input-group">
-            <h3>Estimated Cost</h3>
-            <div id="overheadSummary" aria-live="polite"></div>
-            <button id="applyOverheadRate" type="button">Use Calculated Rate in Labor Set Up</button>
-            <p class="help compact">Job production rates should describe productive work; do not reduce them again for efficiency. Factor vacation and other paid time off into efficiency unless already accounted for elsewhere.</p>
+            <button id="addOverheadEmployee" type="button" class="secondary" data-free-allowed>Add Employee</button>
           </div>
         </div>
         <div class="input-group overhead-expenses">
           <h3>Operating Expenses</h3>
           <p class="help compact">Enter monthly or annual costs, including workers' compensation, benefits and insurance. Production wages already include paid working days; do not enter those wages again as an expense. Enter only additional paid-leave costs here.</p>
           <div id="overheadExpenses"></div>
-          <button id="addOverheadExpense" type="button" class="secondary">Add Expense</button>
+          <button id="addOverheadExpense" type="button" class="secondary" data-free-allowed>Add Expense</button>
+        </div>
+        <div class="input-group overhead-expenses">
+          <h3>Shop Costs</h3>
+          <div class="button-row">
+            <button id="calculateOverhead" type="button" data-free-allowed>Calculate Shop Costs</button>
+            <button id="saveOverhead" type="button" class="secondary" data-free-allowed>Save Shop Overhead</button>
+            <button id="applyOverheadRate" type="button" class="secondary">Use Calculated Rate in Labor Set Up</button>
+          </div>
+          <p id="overheadSaveStatus" class="help compact" role="status" aria-live="polite"></p>
+          <div id="overheadSummary" aria-live="polite"></div>
+          <p class="help compact">The cost per productive man-hour is the suggested Shop Cost Per Hour for Labor Set Up. Job production rates should describe productive work, so do not reduce them again for efficiency. Factor vacation and other paid time off into efficiency unless already accounted for elsewhere.</p>
         </div>
       </div>
 
