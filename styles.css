@@ -251,8 +251,29 @@ h1 {
 
 .tab-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.overhead-expenses {
+  margin-top: 16px;
+}
+
+.overhead-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  align-items: end;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.overhead-row label {
+  min-width: 0;
+}
+
+.overhead-row .mini-btn {
+  justify-self: start;
 }
 
 .sub-tab-row {

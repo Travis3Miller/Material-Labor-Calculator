@@ -302,6 +302,11 @@ test("project and catalog writes require paid entitlement on the server", async 
     },
     body: JSON.stringify({
       shopCostPerHour: 90,
+      shopOverhead: {
+        days: "5", hours: "8", holidays: "10", paidHolidays: true, efficiency: "80",
+        employees: [{ name: "Employee", wage: "25" }],
+        expenses: [{ name: "Rent", amount: "1200", period: "monthly" }]
+      },
       standards: {
         standardsVersion: 2,
         profileNames: {
@@ -316,6 +321,20 @@ test("project and catalog writes require paid entitlement on the server", async 
     headers: { Authorization: "Bearer " + paidSession }
   })).json();
   assert.equal(savedSettings.standards.profileNames.frameless, "Custom Paint Grade Frameless");
+  assert.equal(savedSettings.shopOverhead.employees[0].wage, "25");
+  assert.equal(savedSettings.shopOverhead.paidHolidays, true);
+  const legacyUpdate = await fetch(`${baseUrl}/api/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + paidSession },
+    body: JSON.stringify({ shopCostPerHour: 95 })
+  });
+  assert.equal((await legacyUpdate.json()).shopOverhead.expenses[0].name, "Rent");
+  const invalidOverhead = await fetch(`${baseUrl}/api/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + paidSession },
+    body: JSON.stringify({ shopOverhead: { employees: "invalid" } })
+  });
+  assert.equal(invalidOverhead.status, 400);
   const otherMemberSettings = await fetch(`${baseUrl}/api/settings`, {
     headers: { Authorization: `Bearer ${memberSession}` }
   });

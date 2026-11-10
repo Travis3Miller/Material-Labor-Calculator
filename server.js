@@ -351,6 +351,9 @@ app.put("/api/settings", async (req, res) => {
     const input = req.body && typeof req.body === "object" && !Array.isArray(req.body)
       ? req.body
       : {};
+    if (input.shopOverhead !== undefined && !validShopOverhead(input.shopOverhead)) {
+      return res.status(400).json({ error: "Invalid shop overhead setup." });
+    }
     store.settings = {
       wasteFactorPercent: Number.isFinite(Number(input.wasteFactorPercent))
         ? Math.max(0, Number(input.wasteFactorPercent))
@@ -367,6 +370,7 @@ app.put("/api/settings", async (req, res) => {
       shopCostPerHour: Number.isFinite(Number(input.shopCostPerHour))
         ? Math.max(0, Number(input.shopCostPerHour))
         : 65,
+      shopOverhead: input.shopOverhead === undefined ? store.settings.shopOverhead : input.shopOverhead,
       standards: input.standards && typeof input.standards === "object" && !Array.isArray(input.standards)
         ? input.standards
         : {}
@@ -377,6 +381,18 @@ app.put("/api/settings", async (req, res) => {
     res.status(500).json({ error: "Could not save setup settings." });
   }
 });
+
+function validShopOverhead(value) {
+  const text = (entry, max) => typeof entry === "string" && entry.length <= max;
+  return value && typeof value === "object" && !Array.isArray(value)
+    && ["days", "hours", "holidays", "efficiency"].every((key) => text(value[key], 40))
+    && typeof value.paidHolidays === "boolean"
+    && Array.isArray(value.employees) && value.employees.length <= 200
+    && value.employees.every((item) => item && text(item.name, 200) && text(item.wage, 40))
+    && Array.isArray(value.expenses) && value.expenses.length <= 200
+    && value.expenses.every((item) => item && text(item.name, 200) && text(item.amount, 40)
+      && ["monthly", "annual"].includes(item.period));
+}
 
 async function readStore(req) {
   await databaseReady;

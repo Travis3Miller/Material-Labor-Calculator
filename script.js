@@ -79,6 +79,7 @@ function collectSetupSettings() {
     installLfPerHour: toNumber(byId("installLfPerHour")?.value),
     finishLfPerHour: toNumber(byId("finishLfPerHour")?.value),
     shopCostPerHour: toNumber(byId("shopCostPerHour")?.value),
+    shopOverhead: collectShopOverhead(),
     standards: readLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), defaultStandards())
   };
 }
@@ -134,6 +135,7 @@ async function loadSetupSettings() {
   if (settings.standards && typeof settings.standards === "object") {
     writeLocalJson(localStorageKey(LOCAL_STANDARDS_KEY), settings.standards);
   }
+  renderShopOverhead(settings.shopOverhead || defaultShopOverhead());
   state.restoringSettings = false;
   renderDefaultsUi();
   const status = byId("setupSaveStatus");
@@ -181,6 +183,7 @@ function resetSetupSettings() {
       byId(id).value = String(value);
     }
   });
+  renderShopOverhead(defaultShopOverhead());
   renderDefaultsUi();
 }
 
@@ -278,7 +281,7 @@ function canEditSetup() {
 }
 
 function guardSetupEdits() {
-  ["cabinetStandardsTab", "materialSetupTab", "laborSetupTab"].forEach((id) => {
+  ["cabinetStandardsTab", "materialSetupTab", "laborSetupTab", "shopOverheadTab"].forEach((id) => {
     const panel = byId(id);
     if (!panel) {
       return;
@@ -295,6 +298,162 @@ function guardSetupEdits() {
       event.stopImmediatePropagation();
       openPaywall();
     }, true);
+  });
+}
+
+const SHOP_EXPENSE_NAMES = [
+  "Electricity", "Rent", "Mortgage", "Water and sewer", "Gas and heating",
+  "Internet and phone", "Property insurance", "General liability insurance",
+  "Workers' compensation", "Employer payroll taxes", "Employee benefits",
+  "Paid leave", "Property taxes", "Business taxes and licenses", "Software",
+  "Trash and recycling", "Equipment maintenance and repairs", "Equipment payments",
+  "Vehicle and fuel", "Accounting and legal", "Office and administrative wages",
+  "Owner compensation", "Office supplies", "Safety supplies", "Miscellaneous"
+];
+
+function defaultShopOverhead() {
+  return {
+    days: "5", hours: "8", holidays: "0", paidHolidays: false, efficiency: "100",
+    employees: [],
+    expenses: SHOP_EXPENSE_NAMES.map((name) => ({ name, amount: "0", period: "monthly" }))
+  };
+}
+
+function collectShopOverhead() {
+  return {
+    days: byId("overheadDays").value,
+    hours: byId("overheadHours").value,
+    holidays: byId("overheadHolidays").value,
+    paidHolidays: byId("overheadPaidHolidays").value === "yes",
+    efficiency: byId("overheadEfficiency").value,
+    employees: Array.from(byId("overheadEmployees").querySelectorAll("[data-overhead-row]"), (row) => ({
+      name: row.querySelector('[data-field="name"]').value,
+      wage: row.querySelector('[data-field="wage"]').value
+    })),
+    expenses: Array.from(byId("overheadExpenses").querySelectorAll("[data-overhead-row]"), (row) => ({
+      name: row.querySelector('[data-field="name"]').value,
+      amount: row.querySelector('[data-field="amount"]').value,
+      period: row.querySelector('[data-field="period"]').value
+    }))
+  };
+}
+
+function shopOverheadEstimate(data) {
+  const number = (value) => value !== "" && value !== null && value !== undefined ? Number(value) : NaN;
+  const days = number(data.days);
+  const hours = number(data.hours);
+  const holidays = number(data.holidays);
+  const efficiency = number(data.efficiency);
+  if (!Number.isFinite(days) || days <= 0 || days > 7 || !Number.isFinite(hours) || hours <= 0 || hours > 24
+    || !Number.isInteger(holidays) || holidays < 0 || holidays >= days * 52
+    || !Number.isFinite(efficiency) || efficiency <= 0 || efficiency > 100) {
+    return { error: "Enter a valid schedule, holidays fewer than annual business days, and efficiency above 0% up to 100%." };
+  }
+  if (!Array.isArray(data.employees) || !data.employees.length) {
+    return { error: "Add at least one production employee to calculate a rate." };
+  }
+  if (data.employees.some((employee) => !employee.name.trim() || !Number.isFinite(number(employee.wage)) || number(employee.wage) < 0)) {
+    return { error: "Enter a name and a nonnegative hourly wage for each employee." };
+  }
+  if (!Array.isArray(data.expenses) || data.expenses.some((expense) => !expense.name.trim()
+    || !Number.isFinite(number(expense.amount)) || number(expense.amount) < 0
+    || !["monthly", "annual"].includes(expense.period))) {
+    return { error: "Enter a name and a nonnegative amount for each expense." };
+  }
+  const businessDays = days * 52;
+  const operatingDays = businessDays - holidays;
+  const paidDays = data.paidHolidays ? businessDays : operatingDays;
+  const wageSum = data.employees.reduce((sum, employee) => sum + number(employee.wage), 0);
+  const annualWages = wageSum * hours * paidDays;
+  const annualOverhead = data.expenses.reduce((sum, expense) =>
+    sum + number(expense.amount) * (expense.period === "monthly" ? 12 : 1), 0);
+  const clockHours = operatingDays * hours * data.employees.length;
+  const productiveHours = clockHours * efficiency / 100;
+  const rate = (annualWages + annualOverhead) / productiveHours;
+  if (![annualWages, annualOverhead, clockHours, productiveHours, rate].every(Number.isFinite)) {
+    return { error: "The entered amounts are too large to calculate a rate." };
+  }
+  return { operatingDays, dailyWages: wageSum * hours, annualWages, annualOverhead, clockHours, productiveHours, rate };
+}
+
+function renderShopOverhead(data) {
+  const defaults = defaultShopOverhead();
+  const setup = data && typeof data === "object" ? data : defaults;
+  ["days", "hours", "holidays", "efficiency"].forEach((field) => {
+    byId(`overhead${field[0].toUpperCase()}${field.slice(1)}`).value = setup[field] ?? defaults[field];
+  });
+  byId("overheadPaidHolidays").value = setup.paidHolidays ? "yes" : "no";
+  const employees = Array.isArray(setup.employees) ? setup.employees : defaults.employees;
+  const expenses = Array.isArray(setup.expenses) ? setup.expenses : defaults.expenses;
+  byId("overheadEmployees").innerHTML = employees.map((employee) => `
+    <div class="overhead-row" data-overhead-row>
+      <label>Employee Name<input data-field="name" type="text" maxlength="200" value="${escapeHtml(employee.name)}"></label>
+      <label>Hourly Wage ($)<input data-field="wage" type="number" min="0" step="any" value="${escapeHtml(employee.wage)}"></label>
+      <button type="button" class="mini-btn" data-remove-overhead aria-label="Remove employee">Remove</button>
+    </div>`).join("");
+  byId("overheadExpenses").innerHTML = expenses.map((expense) => `
+    <div class="overhead-row" data-overhead-row>
+      <label>Expense<input data-field="name" type="text" maxlength="200" value="${escapeHtml(expense.name)}"></label>
+      <label>Cost ($)<input data-field="amount" type="number" min="0" step="any" value="${escapeHtml(expense.amount)}"></label>
+      <label>Frequency<select data-field="period">
+        <option value="monthly"${expense.period === "monthly" ? " selected" : ""}>Monthly</option>
+        <option value="annual"${expense.period === "annual" ? " selected" : ""}>Annual</option>
+      </select></label>
+      <button type="button" class="mini-btn" data-remove-overhead aria-label="Remove expense">Remove</button>
+    </div>`).join("");
+  updateShopOverheadSummary();
+}
+
+function updateShopOverheadSummary() {
+  const result = shopOverheadEstimate(collectShopOverhead());
+  byId("applyOverheadRate").disabled = Boolean(result.error);
+  byId("overheadSummary").innerHTML = result.error
+    ? `<p class="help">${escapeHtml(result.error)}</p>`
+    : `<div class="result-line"><span>Operating days per year</span><span>${round2(result.operatingDays)}</span></div>
+       <div class="result-line"><span>Employee wages per working day</span><span>${dollars(result.dailyWages)}</span></div>
+       <div class="result-line"><span>Annual production wages</span><span>${dollars(result.annualWages)}</span></div>
+       <div class="result-line"><span>Annual overhead</span><span>${dollars(result.annualOverhead)}</span></div>
+       <div class="result-line"><span>Annual working employee hours</span><span>${round2(result.clockHours)}</span></div>
+       <div class="result-line"><span>Annual productive man-hours</span><span>${round2(result.productiveHours)}</span></div>
+       <div class="result-line result-separator"><strong>Cost per productive man-hour</strong><strong>${dollars(result.rate)}</strong></div>`;
+}
+
+function bindShopOverhead() {
+  const panel = byId("shopOverheadTab");
+  ["input", "change"].forEach((type) => panel.addEventListener(type, (event) => {
+    if (event.target.matches("input, select")) {
+      updateShopOverheadSummary();
+      scheduleSetupSettingsSave();
+    }
+  }));
+  panel.addEventListener("click", (event) => {
+    if (!event.target.matches("[data-remove-overhead]")) return;
+    event.target.closest("[data-overhead-row]").remove();
+    updateShopOverheadSummary();
+    scheduleSetupSettingsSave();
+  });
+  byId("addOverheadEmployee").addEventListener("click", () => {
+    const data = collectShopOverhead();
+    data.employees.push({ name: "", wage: "" });
+    renderShopOverhead(data);
+    scheduleSetupSettingsSave();
+  });
+  byId("addOverheadExpense").addEventListener("click", () => {
+    const data = collectShopOverhead();
+    data.expenses.push({ name: "", amount: "", period: "monthly" });
+    renderShopOverhead(data);
+    scheduleSetupSettingsSave();
+  });
+  byId("applyOverheadRate").addEventListener("click", () => {
+    const result = shopOverheadEstimate(collectShopOverhead());
+    if (result.error) {
+      alert(result.error);
+      return;
+    }
+    byId("shopCostPerHour").value = result.rate.toFixed(2);
+    scheduleSetupSettingsSave();
+    calculate();
+    switchTab("labor");
   });
 }
 
@@ -1779,17 +1938,20 @@ function switchTab(tabName) {
   const isStandards = tabName === "cabinetStandards";
   const isMaterial = tabName === "material";
   const isLabor = tabName === "labor";
+  const isOverhead = tabName === "shopOverhead";
 
   byId("calculatorTab").classList.toggle("hidden", !isCalc);
   byId("cabinetStandardsTab").classList.toggle("hidden", !isStandards);
   byId("materialSetupTab").classList.toggle("hidden", !isMaterial);
   byId("laborSetupTab").classList.toggle("hidden", !isLabor);
+  byId("shopOverheadTab").classList.toggle("hidden", !isOverhead);
   byId("resultsSection").classList.toggle("hidden", !isCalc);
 
   byId("calculatorTabBtn").classList.toggle("active", isCalc);
   byId("cabinetStandardsTabBtn").classList.toggle("active", isStandards);
   byId("materialSetupTabBtn").classList.toggle("active", isMaterial);
   byId("laborSetupTabBtn").classList.toggle("active", isLabor);
+  byId("shopOverheadTabBtn").classList.toggle("active", isOverhead);
 }
 
 function switchMaterialSubTab(tabName) {
@@ -4523,6 +4685,7 @@ function bindUiEvents() {
   byId("cabinetStandardsTabBtn").addEventListener("click", () => switchTab("cabinetStandards"));
   byId("materialSetupTabBtn").addEventListener("click", () => switchTab("material"));
   byId("laborSetupTabBtn").addEventListener("click", () => switchTab("labor"));
+  byId("shopOverheadTabBtn").addEventListener("click", () => switchTab("shopOverhead"));
 
   byId("panelStockTabBtn").addEventListener("click", () => switchMaterialSubTab("panelStock"));
   byId("boardStockTabBtn").addEventListener("click", () => switchMaterialSubTab("boardStock"));
@@ -4578,7 +4741,9 @@ async function initialize() {
   renderDrawerSets([]);
   ensureDrawerSetsWhenEnabled();
   refreshAutoDrawerLineal();
+  renderShopOverhead(defaultShopOverhead());
   bindUiEvents();
+  bindShopOverhead();
   bindCalculationInputs();
   bindDrawerSetEvents();
   bindListDeleteEvents();

@@ -28,6 +28,7 @@
         <button id="cabinetStandardsTabBtn" type="button" class="tab-btn">Cabinetry Standards Set Up</button>
         <button id="materialSetupTabBtn" type="button" class="tab-btn">Material Set Up</button>
         <button id="laborSetupTabBtn" type="button" class="tab-btn">Labor Set Up</button>
+        <button id="shopOverheadTabBtn" type="button" class="tab-btn">Shop Overhead</button>
       </div>
 
       <div id="calculatorTab" class="tab-panel">
@@ -859,10 +860,59 @@
             <label>Finish LF Per Hour
               <input id="finishLfPerHour" type="number" min="0.01" step="0.01" value="2">
             </label>
-            <label>Shop Cost Per Hour ($)
+            <label>Shop Cost Per Productive Man-Hour ($)
               <input id="shopCostPerHour" type="number" min="0" step="0.01" value="65">
             </label>
+            <p class="help compact">Enter your own rate, or calculate and apply one from Shop Overhead.</p>
           </div>
+        </div>
+      </div>
+
+      <div id="shopOverheadTab" class="tab-panel hidden">
+        <p class="setup-upgrade-note" hidden>Upgrade to save your shop overhead setup to your account.</p>
+        <h2>Shop Overhead</h2>
+        <p class="help">Estimate the cost of one productive man-hour. This estimate does not change your labor rate unless you choose to apply it.</p>
+        <div class="grid material-grid">
+          <div class="input-group">
+            <h3>Shop Schedule</h3>
+            <label>Business Days Per Week
+              <input id="overheadDays" type="number" min="0.01" max="7" step="any" value="5">
+            </label>
+            <label>Hours Per Business Day
+              <input id="overheadHours" type="number" min="0.01" max="24" step="any" value="8">
+            </label>
+            <label>Holidays Per Year (on scheduled business days)
+              <input id="overheadHolidays" type="number" min="0" step="1" value="0">
+            </label>
+            <label>Holiday Pay
+              <select id="overheadPaidHolidays">
+                <option value="yes">Paid</option>
+                <option value="no" selected>Unpaid</option>
+              </select>
+            </label>
+            <label>Productive Efficiency (%)
+              <input id="overheadEfficiency" type="number" min="0.01" max="100" step="any" value="100">
+            </label>
+            <p class="help compact">Efficiency is the share of working time spent on measurable job production, after paid breaks, cleanup, maintenance and other nonproduction time.</p>
+          </div>
+          <div class="input-group">
+            <h3>Employees</h3>
+            <p class="help compact">List production employees whose hours are available for jobs. All employees use the shop schedule above. Include office or owner compensation as an expense instead if they do not produce jobs.</p>
+            <div id="overheadEmployees"></div>
+            <button id="addOverheadEmployee" type="button" class="secondary">Add Employee</button>
+          </div>
+          <div class="input-group">
+            <h3>Estimated Cost</h3>
+            <div id="overheadSummary" aria-live="polite"></div>
+            <button id="applyOverheadRate" type="button">Use Calculated Rate in Labor Set Up</button>
+            <p class="help compact">Job production rates should describe productive work; do not reduce them again for efficiency. Factor vacation and other paid time off into efficiency unless already accounted for elsewhere.</p>
+          </div>
+        </div>
+        <div class="input-group overhead-expenses">
+          <h3>Operating Expenses</h3>
+          <p class="help compact">Enter monthly or annual costs, including employer payroll taxes, workers' compensation, benefits and insurance. Production wages already include paid working days; do not enter those wages again as an expense. Enter only additional paid-leave costs here.</p>
+          <div id="overheadExpenses"></div>
+          <button id="addOverheadExpense" type="button" class="secondary">Add Expense</button>
         </div>
       </div>
 
