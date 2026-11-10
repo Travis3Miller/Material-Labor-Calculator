@@ -386,6 +386,7 @@ function validShopOverhead(value) {
   const text = (entry, max) => typeof entry === "string" && entry.length <= max;
   return value && typeof value === "object" && !Array.isArray(value)
     && ["days", "hours", "holidays", "efficiency"].every((key) => text(value[key], 40))
+    && (value.taxBurden === undefined || text(value.taxBurden, 40))
     && typeof value.paidHolidays === "boolean"
     && Array.isArray(value.employees) && value.employees.length <= 200
     && value.employees.every((item) => item && text(item.name, 200) && text(item.wage, 40))

@@ -33,6 +33,15 @@ test("paid holidays add wages without adding productive hours", () => {
   assert.equal(result.rate, 37.1875);
 });
 
+test("payroll tax burden percent is added to all paid wages", () => {
+  const result = context.shopOverheadEstimate({ ...setup, taxBurden: "10" });
+  assert.equal(result.annualTaxBurden, 10000);
+  assert.equal(result.rate, 39.0625);
+  const paid = context.shopOverheadEstimate({ ...setup, taxBurden: "10", paidHolidays: true });
+  assert.equal(paid.annualTaxBurden, 10400);
+  assert.ok(context.shopOverheadEstimate({ ...setup, taxBurden: "-1" }).error);
+});
+
 test("invalid inputs do not produce a usable rate", () => {
   for (const changes of [
     { efficiency: "0" }, { holidays: "260" }, { employees: [] },

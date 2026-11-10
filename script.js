@@ -304,7 +304,7 @@ function guardSetupEdits() {
 const SHOP_EXPENSE_NAMES = [
   "Electricity", "Rent", "Mortgage", "Water and sewer", "Gas and heating",
   "Internet and phone", "Property insurance", "General liability insurance",
-  "Workers' compensation", "Employer payroll taxes", "Employee benefits",
+  "Workers' compensation", "Employee benefits",
   "Paid leave", "Property taxes", "Business taxes and licenses", "Software",
   "Trash and recycling", "Equipment maintenance and repairs", "Equipment payments",
   "Vehicle and fuel", "Accounting and legal", "Office and administrative wages",
@@ -313,7 +313,7 @@ const SHOP_EXPENSE_NAMES = [
 
 function defaultShopOverhead() {
   return {
-    days: "5", hours: "8", holidays: "0", paidHolidays: false, efficiency: "100",
+    days: "5", hours: "8", holidays: "0", paidHolidays: false, efficiency: "100", taxBurden: "0",
     employees: [],
     expenses: SHOP_EXPENSE_NAMES.map((name) => ({ name, amount: "0", period: "monthly" }))
   };
@@ -326,6 +326,7 @@ function collectShopOverhead() {
     holidays: byId("overheadHolidays").value,
     paidHolidays: byId("overheadPaidHolidays").value === "yes",
     efficiency: byId("overheadEfficiency").value,
+    taxBurden: byId("overheadTaxBurden").value,
     employees: Array.from(byId("overheadEmployees").querySelectorAll("[data-overhead-row]"), (row) => ({
       name: row.querySelector('[data-field="name"]').value,
       wage: row.querySelector('[data-field="wage"]').value
@@ -344,10 +345,12 @@ function shopOverheadEstimate(data) {
   const hours = number(data.hours);
   const holidays = number(data.holidays);
   const efficiency = number(data.efficiency);
+  const taxBurden = data.taxBurden === undefined || data.taxBurden === "" ? 0 : number(data.taxBurden);
   if (!Number.isFinite(days) || days <= 0 || days > 7 || !Number.isFinite(hours) || hours <= 0 || hours > 24
     || !Number.isInteger(holidays) || holidays < 0 || holidays >= days * 52
-    || !Number.isFinite(efficiency) || efficiency <= 0 || efficiency > 100) {
-    return { error: "Enter a valid schedule, holidays fewer than annual business days, and efficiency above 0% up to 100%." };
+    || !Number.isFinite(efficiency) || efficiency <= 0 || efficiency > 100
+    || !Number.isFinite(taxBurden) || taxBurden < 0 || taxBurden > 100) {
+    return { error: "Enter a valid schedule, holidays fewer than annual business days, efficiency above 0% up to 100%, and a tax burden from 0% to 100%." };
   }
   if (!Array.isArray(data.employees) || !data.employees.length) {
     return { error: "Add at least one production employee to calculate a rate." };
@@ -365,21 +368,22 @@ function shopOverheadEstimate(data) {
   const paidDays = data.paidHolidays ? businessDays : operatingDays;
   const wageSum = data.employees.reduce((sum, employee) => sum + number(employee.wage), 0);
   const annualWages = wageSum * hours * paidDays;
+  const annualTaxBurden = annualWages * taxBurden / 100;
   const annualOverhead = data.expenses.reduce((sum, expense) =>
     sum + number(expense.amount) * (expense.period === "monthly" ? 12 : 1), 0);
   const clockHours = operatingDays * hours * data.employees.length;
   const productiveHours = clockHours * efficiency / 100;
-  const rate = (annualWages + annualOverhead) / productiveHours;
-  if (![annualWages, annualOverhead, clockHours, productiveHours, rate].every(Number.isFinite)) {
+  const rate = (annualWages + annualTaxBurden + annualOverhead) / productiveHours;
+  if (![annualWages, annualTaxBurden, annualOverhead, clockHours, productiveHours, rate].every(Number.isFinite)) {
     return { error: "The entered amounts are too large to calculate a rate." };
   }
-  return { operatingDays, dailyWages: wageSum * hours, annualWages, annualOverhead, clockHours, productiveHours, rate };
+  return { operatingDays, dailyWages: wageSum * hours, annualWages, annualTaxBurden, annualOverhead, clockHours, productiveHours, rate };
 }
 
 function renderShopOverhead(data) {
   const defaults = defaultShopOverhead();
   const setup = data && typeof data === "object" ? data : defaults;
-  ["days", "hours", "holidays", "efficiency"].forEach((field) => {
+  ["days", "hours", "holidays", "efficiency", "taxBurden"].forEach((field) => {
     byId(`overhead${field[0].toUpperCase()}${field.slice(1)}`).value = setup[field] ?? defaults[field];
   });
   byId("overheadPaidHolidays").value = setup.paidHolidays ? "yes" : "no";
@@ -412,6 +416,8 @@ function updateShopOverheadSummary() {
     : `<div class="result-line"><span>Operating days per year</span><span>${round2(result.operatingDays)}</span></div>
        <div class="result-line"><span>Employee wages per working day</span><span>${dollars(result.dailyWages)}</span></div>
        <div class="result-line"><span>Annual production wages</span><span>${dollars(result.annualWages)}</span></div>
+       ${collectShopOverhead().employees.map((employee) => `<div class="result-line"><span>${escapeHtml(employee.name)} tax burden / hr</span><span>${dollars(Number(employee.wage) * (Number(collectShopOverhead().taxBurden) || 0) / 100)}</span></div>`).join("")}
+       <div class="result-line"><span>Annual payroll tax burden</span><span>${dollars(result.annualTaxBurden)}</span></div>
        <div class="result-line"><span>Annual overhead</span><span>${dollars(result.annualOverhead)}</span></div>
        <div class="result-line"><span>Annual working employee hours</span><span>${round2(result.clockHours)}</span></div>
        <div class="result-line"><span>Annual productive man-hours</span><span>${round2(result.productiveHours)}</span></div>

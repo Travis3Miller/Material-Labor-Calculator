@@ -893,6 +893,10 @@
             <label>Productive Efficiency (%)
               <input id="overheadEfficiency" type="number" min="0.01" max="100" step="any" value="100">
             </label>
+            <label>Payroll Tax Burden (% of wages)
+              <input id="overheadTaxBurden" type="number" min="0" max="100" step="any" value="0">
+            </label>
+            <p class="help compact">Employer taxes as a percent of wages: 10% on a $25.00 wage adds $2.50 per hour. Applied to all employee wages, including paid holidays.</p>
             <p class="help compact">Efficiency is the share of working time spent on measurable job production, after paid breaks, cleanup, maintenance and other nonproduction time.</p>
           </div>
           <div class="input-group">
@@ -910,7 +914,7 @@
         </div>
         <div class="input-group overhead-expenses">
           <h3>Operating Expenses</h3>
-          <p class="help compact">Enter monthly or annual costs, including employer payroll taxes, workers' compensation, benefits and insurance. Production wages already include paid working days; do not enter those wages again as an expense. Enter only additional paid-leave costs here.</p>
+          <p class="help compact">Enter monthly or annual costs, including workers' compensation, benefits and insurance. Production wages already include paid working days; do not enter those wages again as an expense. Enter only additional paid-leave costs here.</p>
           <div id="overheadExpenses"></div>
           <button id="addOverheadExpense" type="button" class="secondary">Add Expense</button>
         </div>

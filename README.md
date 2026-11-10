@@ -6,7 +6,7 @@ Node.js + Express material and labor calculator with Wix member sign-in, paid fe
 
 - Free: core calculations and print/export.
 - Paid: saved projects, cabinetry standards, materials, and labor setup.
-- Shop Overhead estimates a productive man-hour rate from a 52-week schedule, production employee wages, expenses, holidays, and efficiency. Holiday pay is optional. The estimate is applied to labor setup only when the user chooses it. Monthly expenses are annualized; enter payroll taxes, benefits, and additional leave costs separately, without duplicating production wages. Account for time off in efficiency.
+- Shop Overhead estimates a productive man-hour rate from a 52-week schedule, production employee wages, expenses, holidays, and efficiency. Holiday pay is optional. The estimate is applied to labor setup only when the user chooses it. Monthly expenses are annualized; set the payroll tax burden as a percent of wages, and enter benefits and additional leave costs as expenses, without duplicating production wages. Account for time off in efficiency.
 - New jobs start with the "Default Paint Grade Frameless" standard. Paid members can customize and rename their personal Face Frame and Frameless defaults.
 - The server verifies active Wix Pricing Plan orders against `WIX_PAID_PLAN_IDS` for every protected write. A plan value sent by browser code is never treated as proof of payment.
 
